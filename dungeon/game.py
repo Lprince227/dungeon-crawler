@@ -25,7 +25,7 @@ PLAYER_ATTACK = 5
 ENEMY_START_HP = 8
 ENEMY_ATTACK = 3
 
-SAVE_VERSION = 1
+SAVE_VERSION = 2
 GAME_OVER = "Game over. Start a new game or load a save."
 STATUSES = ("playing", "won", "lost")
 
@@ -200,14 +200,26 @@ class Game:
         return {
             "version": SAVE_VERSION,
             "map": list(self.tiles),
-            "player": {"row": self.player[0], "col": self.player[1], "hp": self.player_hp},
+            "player": {
+                "row": self.player[0],
+                "col": self.player[1],
+                "hp": self.player_hp,
+                "potions": self.potions,
+                "weapons": list(self.weapons),
+            },
             "enemies": [{"row": e.pos[0], "col": e.pos[1], "hp": e.hp} for e in self.enemies],
+            "items": [{"row": i.pos[0], "col": i.pos[1], "kind": i.kind} for i in self.items],
             "status": self.status,
         }
 
     @classmethod
     def from_dict(cls, data: object) -> Game:
-        """Rebuild a game from to_dict() output. Raises SaveError if invalid."""
+        """Rebuild a game from to_dict() output. Raises SaveError if invalid.
+
+        Version 1 saves (round 1, no items) are upgraded to the current version.
+        """
+        if isinstance(data, dict) and data.get("version") == 1:
+            data = _upgrade_v1(data)
         try:
             if not isinstance(data, dict) or data.get("version") != SAVE_VERSION:
                 raise SaveError("unsupported or missing save version")
@@ -231,17 +243,49 @@ class Game:
                     for e in data["enemies"]
                 ],
                 status=data["status"],
+                potions=_int(p["potions"]),
+                weapons=_str_list(p["weapons"]),
+                items=[Item((_int(i["row"]), _int(i["col"])), _str(i["kind"])) for i in data["items"]],
             )
         except (KeyError, TypeError) as exc:
             raise SaveError(f"save data is incomplete: {exc!r}") from exc
         if game.status not in STATUSES:
             raise SaveError(f"unknown status {game.status!r}")
-        if game.tile_at(game.player) == WALL or game.player_hp < 0:
+        if game.tile_at(game.player) == WALL or not 0 <= game.player_hp <= PLAYER_MAX_HP:
             raise SaveError("player position or HP is invalid")
+        if game.potions < 0:
+            raise SaveError("potion count is invalid")
+        if any(w not in WEAPONS for w in game.weapons):
+            raise SaveError("unknown weapon in save")
         for enemy in game.enemies:
             if game.tile_at(enemy.pos) != FLOOR or enemy.hp <= 0 or enemy.pos == game.player:
                 raise SaveError("enemy position or HP is invalid")
+        taken = {game.player} | {e.pos for e in game.enemies}
+        for item in game.items:
+            if item.kind not in ITEM_KINDS or game.tile_at(item.pos) != FLOOR or item.pos in taken:
+                raise SaveError("item kind or position is invalid")
+            taken.add(item.pos)
         return game
+
+
+def _upgrade_v1(data: dict) -> dict:
+    """Turn a round 1 save into a version 2 save: no potions, weapons or items."""
+    data = dict(data, version=SAVE_VERSION, items=[])
+    if isinstance(data.get("player"), dict):
+        data["player"] = dict(data["player"], potions=0, weapons=[])
+    return data
+
+
+def _str(value: object) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"expected a string, got {value!r}")
+    return value
+
+
+def _str_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        raise TypeError(f"expected a list of strings, got {value!r}")
+    return [_str(v) for v in value]
 
 
 def _int(value: object) -> int:

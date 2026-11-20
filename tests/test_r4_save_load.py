@@ -133,6 +133,7 @@ def test_r4_missing_file_raises_save_error(tmp_path):
         '{"version": 2, "map": ["...X"], "player": {"row": 0, "col": 0, "hp": 5, "potions": 0, "weapons": []}, "enemies": [{"row": 0, "col": 2, "hp": 3}], "items": [{"row": 0, "col": 0, "kind": "potion"}], "status": "playing"}',
         '{"version": 2, "map": ["...X"], "player": {"row": 0, "col": 0, "hp": 5}, "enemies": [{"row": 0, "col": 2, "hp": 3}], "items": [], "status": "playing"}',
         '{"version": 2, "map": ["...X"], "player": {"row": 0, "col": 0, "hp": 5, "potions": 0, "weapons": []}, "enemies": [{"row": 0, "col": 2, "hp": 3}], "items": [{"row": 0, "col": 1}], "status": "playing"}',
+        '{"version": 2, "map": ["...X"], "player": {"row": 0, "col": 0, "hp": 5, "potions": 0, "weapons": []}, "enemies": [{"row": 0, "col": 2, "hp": 3}], "items": [{"row": 0, "col": 1, "kind": []}], "status": "playing"}',
     ],
 )
 def test_r4_malformed_file_raises_save_error(tmp_path, content):
