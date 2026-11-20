@@ -8,6 +8,11 @@ from dataclasses import dataclass, field
 
 WALL, FLOOR, EXIT, PLAYER, ENEMY = "#", ".", "X", "@", "E"
 
+PLAYER_START_HP = 20
+PLAYER_ATTACK = 5
+ENEMY_START_HP = 8
+ENEMY_ATTACK = 3
+
 DIRECTIONS = {
     "up": (-1, 0),
     "down": (1, 0),
@@ -31,11 +36,19 @@ DEFAULT_MAP = [
 
 
 @dataclass
+class Enemy:
+    pos: tuple[int, int]
+    hp: int = ENEMY_START_HP
+
+
+@dataclass
 class Game:
     """Complete state of one game. `tiles` holds only walls, floor and the exit."""
 
     tiles: list[str]
     player: tuple[int, int]
+    player_hp: int = PLAYER_START_HP
+    enemies: list[Enemy] = field(default_factory=list)
     status: str = "playing"
 
     @classmethod
@@ -43,12 +56,15 @@ class Game:
         """Build a new game from a text map (see spec.md for the legend)."""
         if not lines or len({len(row) for row in lines}) != 1:
             raise ValueError("map must be non-empty and rectangular")
-        players, exits, tiles = [], [], []
+        players, exits, enemies, tiles = [], [], [], []
         for r, row in enumerate(lines):
             clean = []
             for c, ch in enumerate(row):
                 if ch == PLAYER:
                     players.append((r, c))
+                    ch = FLOOR
+                elif ch == ENEMY:
+                    enemies.append(Enemy((r, c)))
                     ch = FLOOR
                 elif ch == EXIT:
                     exits.append((r, c))
@@ -58,7 +74,7 @@ class Game:
             tiles.append("".join(clean))
         if len(players) != 1 or len(exits) != 1:
             raise ValueError("map needs exactly one '@' and one 'X'")
-        return cls(tiles=tiles, player=players[0])
+        return cls(tiles=tiles, player=players[0], enemies=enemies)
 
     @property
     def height(self) -> int:
@@ -75,19 +91,38 @@ class Game:
             return self.tiles[r][c]
         return WALL
 
+    def enemy_at(self, pos: tuple[int, int]) -> Enemy | None:
+        return next((e for e in self.enemies if e.pos == pos), None)
+
     def move(self, direction: str) -> str:
         """Try to move the player one tile. Returns a message describing the result."""
         dr, dc = DIRECTIONS[direction]
         target = (self.player[0] + dr, self.player[1] + dc)
         if self.tile_at(target) == WALL:
             return "A wall blocks your way."
+        enemy = self.enemy_at(target)
+        if enemy is not None:
+            return self._attack(enemy)
         self.player = target
         return f"You move {direction}."
+
+    def _attack(self, enemy: Enemy) -> str:
+        """Bump attack: hit the enemy; if it survives it hits back."""
+        enemy.hp -= PLAYER_ATTACK
+        if enemy.hp <= 0:
+            self.enemies.remove(enemy)
+            return f"You hit the enemy for {PLAYER_ATTACK} and defeat it!"
+        self.player_hp = max(0, self.player_hp - ENEMY_ATTACK)
+        return (
+            f"You hit the enemy for {PLAYER_ATTACK} (enemy HP {enemy.hp}). "
+            f"It hits back for {ENEMY_ATTACK}."
+        )
 
     def to_dict(self) -> dict:
         return {
             "version": 1,
             "map": list(self.tiles),
-            "player": {"row": self.player[0], "col": self.player[1]},
+            "player": {"row": self.player[0], "col": self.player[1], "hp": self.player_hp},
+            "enemies": [{"row": e.pos[0], "col": e.pos[1], "hp": e.hp} for e in self.enemies],
             "status": self.status,
         }
