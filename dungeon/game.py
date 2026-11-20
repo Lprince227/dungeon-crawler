@@ -4,7 +4,10 @@ Nothing in this module reads input or prints; the terminal front end lives in cl
 """
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
 
 WALL, FLOOR, EXIT, PLAYER, ENEMY = "#", ".", "X", "@", "E"
 
@@ -12,6 +15,9 @@ PLAYER_START_HP = 20
 PLAYER_ATTACK = 5
 ENEMY_START_HP = 8
 ENEMY_ATTACK = 3
+
+SAVE_VERSION = 1
+STATUSES = ("playing", "won", "lost")
 
 DIRECTIONS = {
     "up": (-1, 0),
@@ -33,6 +39,10 @@ DEFAULT_MAP = [
     "#...E....X#",
     "###########",
 ]
+
+
+class SaveError(Exception):
+    """A save file could not be read or does not hold a valid game."""
 
 
 @dataclass
@@ -129,9 +139,72 @@ class Game:
 
     def to_dict(self) -> dict:
         return {
-            "version": 1,
+            "version": SAVE_VERSION,
             "map": list(self.tiles),
             "player": {"row": self.player[0], "col": self.player[1], "hp": self.player_hp},
             "enemies": [{"row": e.pos[0], "col": e.pos[1], "hp": e.hp} for e in self.enemies],
             "status": self.status,
         }
+
+    @classmethod
+    def from_dict(cls, data: object) -> Game:
+        """Rebuild a game from to_dict() output. Raises SaveError if invalid."""
+        try:
+            if not isinstance(data, dict) or data.get("version") != SAVE_VERSION:
+                raise SaveError("unsupported or missing save version")
+            tiles = data["map"]
+            if (
+                not isinstance(tiles, list)
+                or not tiles
+                or not all(isinstance(row, str) for row in tiles)
+                or len({len(row) for row in tiles}) != 1
+                or any(ch not in (WALL, FLOOR, EXIT) for row in tiles for ch in row)
+                or sum(row.count(EXIT) for row in tiles) != 1
+            ):
+                raise SaveError("save map is malformed")
+            p = data["player"]
+            game = cls(
+                tiles=list(tiles),
+                player=(_int(p["row"]), _int(p["col"])),
+                player_hp=_int(p["hp"]),
+                enemies=[
+                    Enemy((_int(e["row"]), _int(e["col"])), _int(e["hp"]))
+                    for e in data["enemies"]
+                ],
+                status=data["status"],
+            )
+        except (KeyError, TypeError) as exc:
+            raise SaveError(f"save data is incomplete: {exc!r}") from exc
+        if game.status not in STATUSES:
+            raise SaveError(f"unknown status {game.status!r}")
+        if game.tile_at(game.player) == WALL or game.player_hp < 0:
+            raise SaveError("player position or HP is invalid")
+        for enemy in game.enemies:
+            if game.tile_at(enemy.pos) != FLOOR or enemy.hp <= 0 or enemy.pos == game.player:
+                raise SaveError("enemy position or HP is invalid")
+        return game
+
+
+def _int(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"expected an integer, got {value!r}")
+    return value
+
+
+def save_game(game: Game, path: str | os.PathLike) -> None:
+    """Write the game to path as JSON. Writes a temp file first so a crash cannot corrupt an old save."""
+    path = Path(path)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(game.to_dict(), indent=2), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def load_game(path: str | os.PathLike) -> Game:
+    """Read a game saved by save_game. Raises SaveError on any problem."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise SaveError(f"no save file at {path}") from exc
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise SaveError(f"could not read save file: {exc}") from exc
+    return Game.from_dict(data)
