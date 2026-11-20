@@ -1,6 +1,6 @@
 # Problem
 
-People who want a quick game during a short break. People who don't often have time to play long form games or for people who like short and sweet gaming experiences that can be played in the terminal.
+People who want a quick game during a short break. Many people dont have time to play a long game but still want a gaming experience. This will help people who don't often have time to play long form games or for people who like short and sweet gaming experiences that can be played in the terminal.
 
 # Initial requirements
 
