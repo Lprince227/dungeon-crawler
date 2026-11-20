@@ -96,6 +96,8 @@ class Game:
 
     def move(self, direction: str) -> str:
         """Try to move the player one tile. Returns a message describing the result."""
+        if self.status != "playing":
+            return "Game over. Start a new game or load a save."
         dr, dc = DIRECTIONS[direction]
         target = (self.player[0] + dr, self.player[1] + dc)
         if self.tile_at(target) == WALL:
@@ -104,6 +106,9 @@ class Game:
         if enemy is not None:
             return self._attack(enemy)
         self.player = target
+        if self.tile_at(target) == EXIT:
+            self.status = "won"
+            return "You reach the exit. You win!"
         return f"You move {direction}."
 
     def _attack(self, enemy: Enemy) -> str:
@@ -113,10 +118,14 @@ class Game:
             self.enemies.remove(enemy)
             return f"You hit the enemy for {PLAYER_ATTACK} and defeat it!"
         self.player_hp = max(0, self.player_hp - ENEMY_ATTACK)
-        return (
+        message = (
             f"You hit the enemy for {PLAYER_ATTACK} (enemy HP {enemy.hp}). "
             f"It hits back for {ENEMY_ATTACK}."
         )
+        if self.player_hp == 0:
+            self.status = "lost"
+            message += " You have fallen. You lost!"
+        return message
 
     def to_dict(self) -> dict:
         return {
