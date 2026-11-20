@@ -12,8 +12,10 @@ from pathlib import Path
 WALL, FLOOR, EXIT, PLAYER, ENEMY = "#", ".", "X", "@", "E"
 
 POTION = "potion"
+# Attack bonus of each weapon kind (R6).
+WEAPONS = {"dagger": 1, "sword": 3, "axe": 5}
 # Map character for each item kind.
-ITEM_CHARS = {"!": POTION}
+ITEM_CHARS = {"!": POTION, "d": "dagger", "s": "sword", "a": "axe"}
 ITEM_KINDS = set(ITEM_CHARS.values())
 
 PLAYER_START_HP = 20
@@ -36,13 +38,13 @@ DIRECTIONS = {
 
 DEFAULT_MAP = [
     "###########",
-    "#@..#....!#",
+    "#@d.#....!#",
     "#.#.#.###.#",
-    "#.#E..#E..#",
+    "#.#E..#Es.#",
     "#.#####.#.#",
     "#!..E...#.#",
     "###.###.#E#",
-    "#.....#...#",
+    "#a....#...#",
     "#.###E#####",
     "#...E..!.X#",
     "###########",
@@ -77,6 +79,7 @@ class Game:
     enemies: list[Enemy] = field(default_factory=list)
     status: str = "playing"
     potions: int = 0
+    weapons: list[str] = field(default_factory=list)
     items: list[Item] = field(default_factory=list)
 
     @classmethod
@@ -115,6 +118,11 @@ class Game:
     def width(self) -> int:
         return len(self.tiles[0])
 
+    @property
+    def attack(self) -> int:
+        """Base attack plus the bonus of every weapon collected (bonuses stack)."""
+        return PLAYER_ATTACK + sum(WEAPONS[w] for w in self.weapons)
+
     def tile_at(self, pos: tuple[int, int]) -> str:
         """Tile at pos; anything outside the grid counts as wall."""
         r, c = pos
@@ -152,8 +160,11 @@ class Game:
     def _pick_up(self, item: Item) -> str:
         """Collect the item the player is standing on."""
         self.items.remove(item)
-        self.potions += 1
-        return f"You pick up a potion (potions: {self.potions})."
+        if item.kind == POTION:
+            self.potions += 1
+            return f"You pick up a potion (potions: {self.potions})."
+        self.weapons.append(item.kind)
+        return f"You equip a {item.kind}: Atk +{WEAPONS[item.kind]} (Atk {self.attack})."
 
     def drink(self) -> str:
         """Drink one potion: heal POTION_HEAL HP, never above PLAYER_MAX_HP."""
@@ -170,13 +181,14 @@ class Game:
 
     def _attack(self, enemy: Enemy) -> str:
         """Bump attack: hit the enemy; if it survives it hits back."""
-        enemy.hp -= PLAYER_ATTACK
+        damage = self.attack
+        enemy.hp -= damage
         if enemy.hp <= 0:
             self.enemies.remove(enemy)
-            return f"You hit the enemy for {PLAYER_ATTACK} and defeat it!"
+            return f"You hit the enemy for {damage} and defeat it!"
         self.player_hp = max(0, self.player_hp - ENEMY_ATTACK)
         message = (
-            f"You hit the enemy for {PLAYER_ATTACK} (enemy HP {enemy.hp}). "
+            f"You hit the enemy for {damage} (enemy HP {enemy.hp}). "
             f"It hits back for {ENEMY_ATTACK}."
         )
         if self.player_hp == 0:

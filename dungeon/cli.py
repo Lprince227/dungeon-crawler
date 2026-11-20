@@ -41,7 +41,8 @@ HELP = """Commands (type, then press Enter):
   load            load savegame.json
   help            show this list
   quit            leave without saving
-Walk over ! to pick up a potion.
+Walk over ! to pick up a potion, and over d / s / a to equip a
+dagger (Atk +1), sword (Atk +3) or axe (Atk +5). Weapon bonuses stack.
 Reach X to win. If your HP hits 0 you lose."""
 
 
@@ -55,7 +56,8 @@ def render(game: Game) -> str:
     rows[game.player[0]][game.player[1]] = PLAYER
     grid = "\n".join("".join(row) for row in rows)
     status = (
-        f"HP: {game.player_hp}/{PLAYER_MAX_HP}   Potions: {game.potions}   "
+        f"HP: {game.player_hp}/{PLAYER_MAX_HP}   Atk: {game.attack}   "
+        f"Potions: {game.potions}   Weapons: {', '.join(game.weapons) or 'none'}   "
         f"Enemies left: {len(game.enemies)}"
     )
     return f"{grid}\n{status}"
