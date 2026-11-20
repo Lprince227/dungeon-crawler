@@ -4,11 +4,23 @@ from __future__ import annotations
 import argparse
 import sys
 
-from dungeon.game import DEFAULT_MAP, ENEMY, PLAYER, Game, SaveError, load_game, save_game
+from dungeon.game import (
+    DEFAULT_MAP,
+    ENEMY,
+    ITEM_CHARS,
+    PLAYER,
+    PLAYER_MAX_HP,
+    Game,
+    SaveError,
+    load_game,
+    save_game,
+)
 
 KEYS = {"w": "up", "s": "down", "a": "left", "d": "right"}
-ACTIONS = {"save", "load", "quit", "help"}
+ACTIONS = {"save", "load", "quit", "help", "drink"}
+ALIASES = {"p": "drink"}
 SAVE_FILE = "savegame.json"
+ITEM_SYMBOLS = {kind: char for char, kind in ITEM_CHARS.items()}
 
 
 def parse_command(text: str) -> tuple[str, str | None]:
@@ -16,6 +28,7 @@ def parse_command(text: str) -> tuple[str, str | None]:
     word = text.strip().lower()
     if word in KEYS:
         return ("move", KEYS[word])
+    word = ALIASES.get(word, word)
     if word in ACTIONS:
         return (word, None)
     return ("unknown", None)
@@ -23,21 +36,29 @@ def parse_command(text: str) -> tuple[str, str | None]:
 
 HELP = """Commands (type, then press Enter):
   w / a / s / d   move up / left / down / right (walk into an enemy to attack)
+  p / drink       drink a potion (heals 10 HP, up to 20)
   save            save to savegame.json
   load            load savegame.json
   help            show this list
   quit            leave without saving
+Walk over ! to pick up a potion.
 Reach X to win. If your HP hits 0 you lose."""
 
 
 def render(game: Game) -> str:
-    """Draw the map with the player and enemies on top of the tiles."""
+    """Draw the map with items, enemies and the player on top of the tiles."""
     rows = [list(row) for row in game.tiles]
+    for item in game.items:
+        rows[item.pos[0]][item.pos[1]] = ITEM_SYMBOLS[item.kind]
     for enemy in game.enemies:
         rows[enemy.pos[0]][enemy.pos[1]] = ENEMY
     rows[game.player[0]][game.player[1]] = PLAYER
     grid = "\n".join("".join(row) for row in rows)
-    return f"{grid}\nHP: {game.player_hp}   Enemies left: {len(game.enemies)}"
+    status = (
+        f"HP: {game.player_hp}/{PLAYER_MAX_HP}   Potions: {game.potions}   "
+        f"Enemies left: {len(game.enemies)}"
+    )
+    return f"{grid}\n{status}"
 
 
 def run(game: Game, save_path: str = SAVE_FILE, read=input, write=print) -> Game:
@@ -55,6 +76,8 @@ def run(game: Game, save_path: str = SAVE_FILE, read=input, write=print) -> Game
             return game
         if action == "move":
             write(game.move(arg))
+        elif action == "drink":
+            write(game.drink())
         elif action == "save":
             try:
                 save_game(game, save_path)

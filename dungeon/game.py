@@ -11,12 +11,20 @@ from pathlib import Path
 
 WALL, FLOOR, EXIT, PLAYER, ENEMY = "#", ".", "X", "@", "E"
 
+POTION = "potion"
+# Map character for each item kind.
+ITEM_CHARS = {"!": POTION}
+ITEM_KINDS = set(ITEM_CHARS.values())
+
 PLAYER_START_HP = 20
+PLAYER_MAX_HP = PLAYER_START_HP
+POTION_HEAL = 10
 PLAYER_ATTACK = 5
 ENEMY_START_HP = 8
 ENEMY_ATTACK = 3
 
 SAVE_VERSION = 1
+GAME_OVER = "Game over. Start a new game or load a save."
 STATUSES = ("playing", "won", "lost")
 
 DIRECTIONS = {
@@ -28,15 +36,15 @@ DIRECTIONS = {
 
 DEFAULT_MAP = [
     "###########",
-    "#@..#.....#",
+    "#@..#....!#",
     "#.#.#.###.#",
     "#.#E..#E..#",
     "#.#####.#.#",
-    "#...E...#.#",
+    "#!..E...#.#",
     "###.###.#E#",
     "#.....#...#",
     "#.###E#####",
-    "#...E....X#",
+    "#...E..!.X#",
     "###########",
 ]
 
@@ -52,6 +60,14 @@ class Enemy:
 
 
 @dataclass
+class Item:
+    """Something lying on a floor tile that the player picks up by stepping on it."""
+
+    pos: tuple[int, int]
+    kind: str
+
+
+@dataclass
 class Game:
     """Complete state of one game. `tiles` holds only walls, floor and the exit."""
 
@@ -60,13 +76,15 @@ class Game:
     player_hp: int = PLAYER_START_HP
     enemies: list[Enemy] = field(default_factory=list)
     status: str = "playing"
+    potions: int = 0
+    items: list[Item] = field(default_factory=list)
 
     @classmethod
     def from_map(cls, lines: list[str]) -> Game:
         """Build a new game from a text map (see spec.md for the legend)."""
         if not lines or len({len(row) for row in lines}) != 1:
             raise ValueError("map must be non-empty and rectangular")
-        players, exits, enemies, tiles = [], [], [], []
+        players, exits, enemies, items, tiles = [], [], [], [], []
         for r, row in enumerate(lines):
             clean = []
             for c, ch in enumerate(row):
@@ -76,6 +94,9 @@ class Game:
                 elif ch == ENEMY:
                     enemies.append(Enemy((r, c)))
                     ch = FLOOR
+                elif ch in ITEM_CHARS:
+                    items.append(Item((r, c), ITEM_CHARS[ch]))
+                    ch = FLOOR
                 elif ch == EXIT:
                     exits.append((r, c))
                 elif ch not in (WALL, FLOOR):
@@ -84,7 +105,7 @@ class Game:
             tiles.append("".join(clean))
         if len(players) != 1 or len(exits) != 1:
             raise ValueError("map needs exactly one '@' and one 'X'")
-        return cls(tiles=tiles, player=players[0], enemies=enemies)
+        return cls(tiles=tiles, player=players[0], enemies=enemies, items=items)
 
     @property
     def height(self) -> int:
@@ -104,10 +125,13 @@ class Game:
     def enemy_at(self, pos: tuple[int, int]) -> Enemy | None:
         return next((e for e in self.enemies if e.pos == pos), None)
 
+    def item_at(self, pos: tuple[int, int]) -> Item | None:
+        return next((i for i in self.items if i.pos == pos), None)
+
     def move(self, direction: str) -> str:
         """Try to move the player one tile. Returns a message describing the result."""
         if self.status != "playing":
-            return "Game over. Start a new game or load a save."
+            return GAME_OVER
         dr, dc = DIRECTIONS[direction]
         target = (self.player[0] + dr, self.player[1] + dc)
         if self.tile_at(target) == WALL:
@@ -119,7 +143,30 @@ class Game:
         if self.tile_at(target) == EXIT:
             self.status = "won"
             return "You reach the exit. You win!"
-        return f"You move {direction}."
+        message = f"You move {direction}."
+        item = self.item_at(target)
+        if item is not None:
+            message += " " + self._pick_up(item)
+        return message
+
+    def _pick_up(self, item: Item) -> str:
+        """Collect the item the player is standing on."""
+        self.items.remove(item)
+        self.potions += 1
+        return f"You pick up a potion (potions: {self.potions})."
+
+    def drink(self) -> str:
+        """Drink one potion: heal POTION_HEAL HP, never above PLAYER_MAX_HP."""
+        if self.status != "playing":
+            return GAME_OVER
+        if self.potions == 0:
+            return "You have no potions."
+        if self.player_hp >= PLAYER_MAX_HP:
+            return "You are already at full health. You keep the potion."
+        healed = min(POTION_HEAL, PLAYER_MAX_HP - self.player_hp)
+        self.player_hp += healed
+        self.potions -= 1
+        return f"You drink a potion and heal {healed} HP (HP {self.player_hp}/{PLAYER_MAX_HP})."
 
     def _attack(self, enemy: Enemy) -> str:
         """Bump attack: hit the enemy; if it survives it hits back."""
