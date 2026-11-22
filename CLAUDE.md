@@ -26,6 +26,10 @@ Standing rules for working in this repository.
 - Test anything that differs by level (such as enemy stats, R11) on the level as the player
   reaches it in the default game (`Game.from_levels(LEVELS)`, then go through each exit).
   Don't use `Game.from_map(LEVELS[i])` for this: it always builds level 1.
+- Game rules that use chance draw from `Game.rng`, never the `random` module directly.
+  Tests set `game.rng` to a fixed roll (or a seeded `random.Random` for rate checks),
+  so no test result depends on luck. A test that attacks on level 3 or later must also
+  clear `game.paralysis` between hits or set a fixed roll (R12).
 - When adding a command or game action, say in `spec.md`'s "Turns" section whether it is a
   turn (poison ticks first, R10) or not, and test both the action and its poison behaviour.
 - Record decisions that had real alternatives as `docs/decisions/NNNN-<topic>.md` Y-statements,
