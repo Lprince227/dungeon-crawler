@@ -24,8 +24,9 @@ Type a command and press Enter:
 | `save` / `load` | Save to or load from `savegame.json` |
 | `help` / `quit` | Show the commands / leave without saving |
 
-You start with 20 HP and deal 5 damage. Enemies have 12 HP and deal 3 damage
-each time they survive one of your hits. That hit also poisons you: each of
+You start with 20 HP and deal 5 damage. Enemies get tougher on each level:
+12 HP on level 1, 16 HP on level 2, and 20 HP on level 3. They deal 3 damage
+(4 on level 3) each time they survive one of your hits. That hit also poisons you: each of
 your next 3 moves or attacks costs 1 HP (another hit resets it to 3; a potion
 cures it). The status line shows `Poisoned: n turns` while it lasts. Walking onto a potion picks it up.
 Walking onto a weapon equips it and adds its bonus to your attack; bonuses
@@ -33,8 +34,9 @@ stack. Reaching `X` takes you down to the next level, keeping your HP,
 potions and weapons (HP is not restored). Each level has more enemies and
 fewer potions. Reach `X` on level 3 to win. If your HP hits 0, you lose.
 
-Saves from earlier versions of the game still load. Round 3 saves start
-unpoisoned and keep their enemies' saved HP. Older saves' map becomes level 1,
+Saves from earlier versions of the game still load. Round 4 saves keep
+their enemies' saved HP, and those enemies hit for their level's damage.
+Round 3 saves start unpoisoned and keep their enemies' saved HP. Older saves' map becomes level 1,
 followed by levels 2 and 3. Saves from the first version start with no potions
 or weapons and no items on the map.
 
@@ -56,5 +58,5 @@ py -m pip install -r requirements-dev.txt
 py -m pytest
 ```
 
-Each test names the requirement (R1-R10 in `problem.md`) it checks. The detailed
+Each test names the requirement (R1-R11 in `problem.md`) it checks. The detailed
 rules are in `spec.md`.

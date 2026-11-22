@@ -44,8 +44,10 @@ HELP = """Commands (type, then press Enter):
 Walk over ! to pick up a potion. Walk over a weapon to equip it:
   - dagger (Atk +1)   / sword (Atk +3)   T axe (Atk +5)
 Weapon bonuses stack.
-Enemies have 12 HP. When one survives your hit it hits back for 3 and poisons
-you: you lose 1 HP on each of your next 3 moves. A potion cures poison.
+Enemies get tougher each level: 12 HP on level 1, 16 HP on level 2, and on
+level 3 20 HP and they hit for 4 instead of 3. When one survives your hit it
+hits back and poisons you: you lose 1 HP on each of your next 3 moves. A potion
+cures poison.
 Reach X to go down to the next level. HP, potions and weapons come with you.
 Reach X on the last level to win. If your HP hits 0 you lose."""
 
