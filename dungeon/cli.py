@@ -5,9 +5,9 @@ import argparse
 import sys
 
 from dungeon.game import (
-    DEFAULT_MAP,
     ENEMY,
     ITEM_CHARS,
+    LEVELS,
     PLAYER,
     PLAYER_MAX_HP,
     Game,
@@ -44,7 +44,8 @@ HELP = """Commands (type, then press Enter):
 Walk over ! to pick up a potion. Walk over a weapon to equip it:
   - dagger (Atk +1)   / sword (Atk +3)   T axe (Atk +5)
 Weapon bonuses stack.
-Reach X to win. If your HP hits 0 you lose."""
+Reach X to go down to the next level. HP, potions and weapons come with you.
+Reach X on the last level to win. If your HP hits 0 you lose."""
 
 
 def render(game: Game) -> str:
@@ -57,7 +58,7 @@ def render(game: Game) -> str:
     rows[game.player[0]][game.player[1]] = PLAYER
     grid = "\n".join("".join(row) for row in rows)
     status = (
-        f"HP: {game.player_hp}/{PLAYER_MAX_HP}   Atk: {game.attack}   "
+        f"Level: {game.level}/{game.total_levels}   HP: {game.player_hp}/{PLAYER_MAX_HP}   Atk: {game.attack}   "
         f"Potions: {game.potions}   Weapons: {', '.join(game.weapons) or 'none'}   "
         f"Enemies left: {len(game.enemies)}"
     )
@@ -106,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="A short terminal dungeon crawler.")
     parser.add_argument("--load", action="store_true", help=f"start from {SAVE_FILE}")
     args = parser.parse_args(argv)
-    game = Game.from_map(DEFAULT_MAP)
+    game = Game.from_levels(LEVELS)
     if args.load:
         try:
             game = load_game(SAVE_FILE)

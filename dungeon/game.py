@@ -50,6 +50,37 @@ DEFAULT_MAP = [
     "###########",
 ]
 
+# The built-in levels, played in order (R7). Level 1 is the round 2 default map.
+LEVELS = [
+    DEFAULT_MAP,
+    [
+        "###########",
+        "#@..E...#.#",
+        "#.###.#.#.#",
+        "#.#!..#E..#",
+        "#.#.###.###",
+        "#E..E.#..E#",
+        "###.#.#.#.#",
+        "#-..#E..#.#",
+        "#.#####.#E#",
+        "#..E..!.#X#",
+        "###########",
+    ],
+    [
+        "#############",
+        "#@.E..#..E..#",
+        "#.###.#.###.#",
+        "#.#E..E...#.#",
+        "#.#.#####.#E#",
+        "#E..#!..E.#.#",
+        "###.#.###.#.#",
+        "#...E.....E.#",
+        "#.#######.###",
+        "#.E.....E..X#",
+        "#############",
+    ],
+]
+
 
 class SaveError(Exception):
     """A save file could not be read or does not hold a valid game."""
@@ -81,10 +112,24 @@ class Game:
     potions: int = 0
     weapons: list[str] = field(default_factory=list)
     items: list[Item] = field(default_factory=list)
+    # Level number (1-based) and the full text maps of the levels still to come (R7).
+    level: int = 1
+    next_levels: list[list[str]] = field(default_factory=list)
+
+    @classmethod
+    def from_levels(cls, levels: list[list[str]]) -> Game:
+        """Build a new game that starts on the first map and plays the others in order."""
+        if not levels:
+            raise ValueError("a game needs at least one level")
+        for lines in levels[1:]:
+            cls.from_map(lines)  # check later levels now, not when they are reached
+        game = cls.from_map(levels[0])
+        game.next_levels = [list(lines) for lines in levels[1:]]
+        return game
 
     @classmethod
     def from_map(cls, lines: list[str]) -> Game:
-        """Build a new game from a text map (see spec.md for the legend)."""
+        """Build a new one-level game from a text map (see spec.md for the legend)."""
         if not lines or len({len(row) for row in lines}) != 1:
             raise ValueError("map must be non-empty and rectangular")
         players, exits, enemies, items, tiles = [], [], [], [], []
@@ -119,6 +164,10 @@ class Game:
         return len(self.tiles[0])
 
     @property
+    def total_levels(self) -> int:
+        return self.level + len(self.next_levels)
+
+    @property
     def attack(self) -> int:
         """Base attack plus the bonus of every weapon collected (bonuses stack)."""
         return PLAYER_ATTACK + sum(WEAPONS[w] for w in self.weapons)
@@ -149,13 +198,23 @@ class Game:
             return self._attack(enemy)
         self.player = target
         if self.tile_at(target) == EXIT:
+            if self.next_levels:
+                return self._next_level()
             self.status = "won"
-            return "You reach the exit. You win!"
+            return "You reach the exit of the last level. You win!"
         message = f"You move {direction}."
         item = self.item_at(target)
         if item is not None:
             message += " " + self._pick_up(item)
         return message
+
+    def _next_level(self) -> str:
+        """Replace the map, enemies and items with the next level's. Stats carry over (R7.3)."""
+        nxt = Game.from_map(self.next_levels.pop(0))
+        self.tiles, self.player = nxt.tiles, nxt.player
+        self.enemies, self.items = nxt.enemies, nxt.items
+        self.level += 1
+        return f"You reach the exit and go down to level {self.level} of {self.total_levels}."
 
     def _pick_up(self, item: Item) -> str:
         """Collect the item the player is standing on."""
