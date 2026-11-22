@@ -1,4 +1,4 @@
-# Spec: Terminal Dungeon Crawler (round 5)
+# Spec: Terminal Dungeon Crawler (round 6)
 
 A short, turn-based dungeon game that runs in a terminal. One game should take
 a few minutes. Python 3.12, standard library only (pytest for tests).
@@ -46,14 +46,18 @@ weapons collected and enemies left, e.g.
 `Level: 2/3   HP: 17/20   Atk: 8   Potions: 1   Weapons: sword   Enemies left: 5`.
 "Enemies left" counts the current level only. While the player is poisoned
 (R10), the line ends with the poison turns left, e.g. `   Poisoned: 2 turns`.
+While the player is paralysed (R12), it then shows `   Paralysed: 2 turns`.
 
 ## Turns
 
 A **turn** is a move onto a floor, item or exit tile, an attack on an enemy,
-or a drink that is not refused. A bump into a wall or the grid edge, a refused
+or a drink that is not refused. An attack that fails because the player is
+paralysed (R12.4) is still a turn. A bump into a wall or the grid edge, a refused
 drink (no potions, or full HP while not poisoned), any command after the game
 is over, and `save`, `load`, `help`, `quit` or an unknown command are **not**
-turns: they change nothing, so poison (R10) does not tick on them.
+turns: they change nothing, so poison (R10) and paralysis (R12) do not tick
+on them. At the start of a turn, poison ticks first, then paralysis (R12.3).
+A drink ticks neither: it cures both (R10.5, R12.5).
 
 ## R1: Movement on a grid
 
@@ -66,7 +70,8 @@ turns: they change nothing, so poison (R10) does not tick on them.
 
 ## R2: Enemies, health and damage
 
-Combat is "bump to attack" and has no randomness:
+Combat is "bump to attack". Its only random part is paralysis (R12, added in
+round 6). Without paralysis, an attack always hits:
 
 - The player starts with 20 HP (also the maximum HP) and a base attack of 5.
   The player's attack is the base attack plus every weapon bonus (R6).
@@ -79,7 +84,8 @@ Combat is "bump to attack" and has no randomness:
 - R2.2 If the enemy's HP drops to 0 or below, it is removed from the map. The
   player stays on their original tile and can step into the freed tile next turn.
 - R2.3 If the enemy survives, it hits back right away. The player loses HP
-  equal to that enemy's attack, and is poisoned (R10).
+  equal to that enemy's attack, and is poisoned (R10). A level 3 enemy's
+  hit-back also paralyses (R12).
 - R2.4 Enemies do not move. Each enemy keeps its own HP between attacks.
 - HP is never shown below 0. It is clamped to 0.
 
@@ -100,7 +106,8 @@ Combat is "bump to attack" and has no randomness:
 
 - R4.1 Saving writes the full game state (current level's map, level number,
   the maps of the levels still to come, player position, HP, potions carried
-  and weapons collected, poison turns left, every enemy's position, HP and attack,
+  and weapons collected, poison and paralysis turns left, every enemy's
+  position, HP, attack and whether it paralyses,
   every item still on the map, status) to a JSON file.
 - R4.2 Loading that file restores a game equal to the one that was saved, so
   play continues exactly where it left off.
@@ -113,9 +120,15 @@ Combat is "bump to attack" and has no randomness:
   level number is not an integer of 1 or more; `next_levels` is not a list of
   maps that each pass the map rules above. Round 4 adds: the player's
   `poison` is not an integer from 0 to 3. Round 5 adds: an enemy's `attack`
-  is missing or is not an integer of 1 or more.
+  is missing or is not an integer of 1 or more. Round 6 adds: the player's
+  `paralysis` is not an integer from 0 to 3; an enemy's `paralyses` is
+  missing or is not `true`/`false`.
 - R4.4 The program can be started from a save: `py -m dungeon --load`.
-- R4.5 The save file has `"version": 5`. Older saves still load:
+- R4.5 The save file has `"version": 6`. Older saves still load:
+  - A round 5 save (`"version": 5`) loads with the player not paralysed
+    (`paralysis` 0). Each enemy on the saved level paralyses if the save's
+    level number is 3 or more (R12.1). Levels still to come are built from
+    their maps.
   - A round 4 save (`"version": 4`) gives each enemy on the saved level the
     attack for that save's level number (R11: 3 on levels 1 and 2, 4 on
     level 3 and later). Enemies keep the HP stored in the save, so unhurt
@@ -130,21 +143,21 @@ Combat is "bump to attack" and has no randomness:
     and gets no further levels.
   - A round 1 save (`"version": 1`) is first upgraded to version 2 (0 potions,
     no weapons, no items on the map), then as above.
-  - Each upgrade goes up one version: 1 → 2 → 3 → 4 → 5.
+  - Each upgrade goes up one version: 1 → 2 → 3 → 4 → 5 → 6.
   - Any other version is rejected with `SaveError`.
 
-Version 5 layout (`map` is the current level with only `#`, `.` and `X`;
+Version 6 layout (`map` is the current level with only `#`, `.` and `X`;
 `next_levels` holds the full text maps, with `@`, enemies and items, of the
 levels still to come, in order):
 
 ```json
 {
-  "version": 5,
+  "version": 6,
   "level": 1,
   "map": ["#####", "#...#", "####X"],
   "next_levels": [["@.X"]],
-  "player": {"row": 1, "col": 1, "hp": 17, "potions": 0, "weapons": ["sword"], "poison": 3},
-  "enemies": [{"row": 1, "col": 2, "hp": 3, "attack": 3}],
+  "player": {"row": 1, "col": 1, "hp": 17, "potions": 0, "weapons": ["sword"], "poison": 3, "paralysis": 0},
+  "enemies": [{"row": 1, "col": 2, "hp": 3, "attack": 3, "paralyses": false}],
   "items": [{"row": 1, "col": 3, "kind": "potion"}],
   "status": "playing"
 }
@@ -157,11 +170,13 @@ levels still to come, in order):
   goes up by 1. There is no carry limit.
 - R5.2 The drink command (`p` / `drink`) can be used on any turn while the game
   is `playing`. It uses one potion and restores 10 HP, but never above the
-  maximum of 20. It also cures poison (R10.5, added in round 4).
+  maximum of 20. It also cures poison (R10.5, added in round 4) and
+  paralysis (R12.5, added in round 6).
 - R5.3 Drinking with no potions does nothing except return a message.
-- R5.4 Drinking at full HP (20) while not poisoned is refused: the potion is
-  kept and a message is returned. (Changed in round 4: a poisoned player at
-  full HP may drink, to cure the poison.)
+- R5.4 Drinking at full HP (20) while neither poisoned nor paralysed is
+  refused: the potion is kept and a message is returned. (Changed in round 4:
+  a poisoned player at full HP may drink, to cure the poison. Changed in
+  round 6: so may a paralysed one.)
 - R5.5 Drinking takes the player's turn but nothing else happens, because
   enemies only act when attacked, and poison does not hurt on a drink turn.
 
@@ -253,13 +268,46 @@ levels still to come, in order):
   reaching the exit of the level before). Each enemy keeps its own HP and
   attack; both are saved and loaded with it (R4).
 - R11.4 Poison is the same on every level: 1 damage for 3 turns (R10).
+  Level 3 enemies also paralyse (R12).
 - R11.5 Reaching a new level says how strong its enemies are, e.g.
-  `Enemies here have 16 HP and hit for 3.`
+  `Enemies here have 16 HP and hit for 3.` On a level whose enemies
+  paralyse (R12), it adds `Their hits also paralyse you.`
 - R11.6 Hits to kill an unhurt enemy are its HP divided by the player's
   attack, rounded up. Level 2 (16 HP): Atk 5 → 4 hits; 6 or 7 → 3; 8 to 15 →
   2; 16 or more → 1. Level 3 (20 HP): Atk 5 or 6 → 4 hits; 7 to 9 → 3; 10 to
   19 → 2; 20 or more → 1. The default game has at most Atk 15, so no level 2
-  or 3 enemy dies in one hit there.
+  or 3 enemy dies in one hit there. On level 3 these counts assume every
+  attack lands, i.e. the player is not paralysed (R12.4, changed in round 6).
+
+## R12: Paralysis (round 6)
+
+- R12.1 Only enemies on level 3 can paralyse. As with R11.2, this goes by
+  the level number, so a level past 3 in a custom game also paralyses, and
+  the level 3 map played on its own (level 1) does not. Each enemy gets this
+  when its level is loaded and keeps it (saved per enemy, R4).
+- R12.2 Whenever a paralysing enemy hits back (R2.3), the player is
+  paralysed for 3 turns, as well as poisoned (R10.1). It does not stack: a
+  new paralysing hit resets the turns left to 3. An attack that kills the
+  enemy causes no hit-back and so no paralysis.
+- R12.3 At the start of each turn (see Turns) while paralysed, after poison
+  has ticked, the turns left go down by 1 and that turn is a paralysed turn.
+  At 0 turns left the paralysis wears off. The turn of the hit-back itself is
+  not one of the 3. If poison kills the player first, nothing else happens
+  (R10.4).
+- R12.4 On a paralysed turn, an attack has a 75% chance to fail: the enemy
+  takes no damage and does not hit back, and the message says the player
+  could not attack. The turn is still used. With the other 25%, the attack
+  goes ahead as normal (and its hit-back can paralyse again). Moving,
+  picking up items, reaching an exit and drinking are not affected.
+- R12.5 Drinking a potion cures paralysis as well as poison, in one drink:
+  it heals as in R5.2 and sets both turns left to 0. A paralysed player at
+  full HP may drink: the potion is used, heals 0 HP and cures it (R5.4).
+- R12.6 Paralysis carries over to the next level like HP (R7.3), is saved
+  and loaded (R4), and is shown in the status line.
+- R12.7 The roll comes from a random number generator held by the game, so
+  tests can give it a fixed one. The generator's state is not saved: a loaded
+  game gets a new one. An attack fails when the generator's `random()`
+  returns a number below 0.75.
 
 ## Level 1 (the round 2 default map, new symbols)
 
@@ -315,11 +363,13 @@ Eight enemies, two potions, and a dagger.
 
 Eleven enemies, one potion, no weapons.
 
-## Out of scope for round 5
+## Out of scope for round 6
 
 Random maps, enemies that differ from each other on the same level (a
-separate poison enemy type), poison that grows stronger by level, poison that stacks, other status
-effects, enemy HP shown on the map, healing between levels,
+separate poison enemy type), poison that grows stronger by level, poison or
+paralysis that stacks, paralysis that stops moving or drinking, a chance that
+a level 3 hit-back does not paralyse, separate cures for poison and
+paralysis, saving the random generator's state, other status effects, enemy HP shown on the map, healing between levels,
 going back to an earlier level, enemy movement, dropping or swapping weapons,
 items other than potions and the three weapons, defense or max-HP stats,
 single-keypress input, colour, and named save slots.
