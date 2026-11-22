@@ -1,4 +1,4 @@
-# Spec: Terminal Dungeon Crawler (round 3)
+# Spec: Terminal Dungeon Crawler (round 4)
 
 A short, turn-based dungeon game that runs in a terminal. One game should take
 a few minutes. Python 3.12, standard library only (pytest for tests).
@@ -44,7 +44,16 @@ An unknown command prints a short hint and changes nothing.
 The status line under the map shows HP out of max HP, attack, potions carried,
 weapons collected and enemies left, e.g.
 `Level: 2/3   HP: 17/20   Atk: 8   Potions: 1   Weapons: sword   Enemies left: 5`.
-"Enemies left" counts the current level only.
+"Enemies left" counts the current level only. While the player is poisoned
+(R10), the line ends with the poison turns left, e.g. `   Poisoned: 2 turns`.
+
+## Turns
+
+A **turn** is a move onto a floor, item or exit tile, an attack on an enemy,
+or a drink that is not refused. A bump into a wall or the grid edge, a refused
+drink (no potions, or full HP while not poisoned), any command after the game
+is over, and `save`, `load`, `help`, `quit` or an unknown command are **not**
+turns: they change nothing, so poison (R10) does not tick on them.
 
 ## R1: Movement on a grid
 
@@ -61,13 +70,14 @@ Combat is "bump to attack" and has no randomness:
 
 - The player starts with 20 HP (also the maximum HP) and a base attack of 5.
   The player's attack is the base attack plus every weapon bonus (R6).
-- Each enemy starts with 8 HP and deals 3 damage per attack.
+- Each enemy starts with 12 HP (8 before round 4, see R9) and deals 3 damage
+  per attack.
 - R2.1 Moving into an enemy's tile attacks it instead of moving. The enemy
   loses HP equal to the player's attack.
 - R2.2 If the enemy's HP drops to 0 or below, it is removed from the map. The
   player stays on their original tile and can step into the freed tile next turn.
 - R2.3 If the enemy survives, it hits back right away. The player loses HP
-  equal to the enemy's attack.
+  equal to the enemy's attack, and is poisoned (R10).
 - R2.4 Enemies do not move. Each enemy keeps its own HP between attacks.
 - HP is never shown below 0. It is clamped to 0.
 
@@ -77,7 +87,8 @@ Combat is "bump to attack" and has no randomness:
   game ends with status `won`. Reaching the exit of any earlier level is not a
   win: the player goes on to the next level (R7.2). A game built from a single
   map has one level, so its exit wins.
-- R3.2 When the player's HP reaches 0, the game ends with status `lost`.
+- R3.2 When the player's HP reaches 0, from an enemy's hit or from poison
+  (R10), the game ends with status `lost`.
 - R3.3 Once the game is over (`won` or `lost`), move and drink commands change
   nothing and return a "game over" message. The terminal program prints the
   result and exits.
@@ -87,8 +98,8 @@ Combat is "bump to attack" and has no randomness:
 
 - R4.1 Saving writes the full game state (current level's map, level number,
   the maps of the levels still to come, player position, HP, potions carried
-  and weapons collected, every enemy's position and HP, every item still on
-  the map, status) to a JSON file.
+  and weapons collected, poison turns left, every enemy's position and HP,
+  every item still on the map, status) to a JSON file.
 - R4.2 Loading that file restores a game equal to the one that was saved, so
   play continues exactly where it left off.
 - R4.3 Loading a missing, unreadable or malformed file raises `SaveError`
@@ -98,27 +109,33 @@ Combat is "bump to attack" and has no randomness:
   name is unknown; an item has an unknown kind, is not on a floor tile, or
   shares a tile with another item, an enemy or the player. Round 3 adds: the
   level number is not an integer of 1 or more; `next_levels` is not a list of
-  maps that each pass the map rules above.
+  maps that each pass the map rules above. Round 4 adds: the player's
+  `poison` is not an integer from 0 to 3.
 - R4.4 The program can be started from a save: `py -m dungeon --load`.
-- R4.5 The save file has `"version": 3`. Older saves still load:
+- R4.5 The save file has `"version": 4`. Older saves still load:
+  - A round 3 save (`"version": 3`) loads with the player not poisoned
+    (`poison` 0). Its enemies keep the HP stored in the save (so an unhurt
+    enemy on the saved level still has 8 HP), while enemies on the levels
+    still to come are built from their maps and get the round 4 HP of 12.
   - A round 2 save (`"version": 2`) becomes level 1, followed by levels 2 and
     3 of the built-in levels. A round 2 save whose status is `won` stays won
     and gets no further levels.
   - A round 1 save (`"version": 1`) is first upgraded to version 2 (0 potions,
     no weapons, no items on the map), then as above.
+  - Each upgrade goes up one version: 1 → 2 → 3 → 4.
   - Any other version is rejected with `SaveError`.
 
-Version 3 layout (`map` is the current level with only `#`, `.` and `X`;
+Version 4 layout (`map` is the current level with only `#`, `.` and `X`;
 `next_levels` holds the full text maps, with `@`, enemies and items, of the
 levels still to come, in order):
 
 ```json
 {
-  "version": 3,
+  "version": 4,
   "level": 1,
   "map": ["#####", "#...#", "####X"],
   "next_levels": [["@.X"]],
-  "player": {"row": 1, "col": 1, "hp": 17, "potions": 0, "weapons": ["sword"]},
+  "player": {"row": 1, "col": 1, "hp": 17, "potions": 0, "weapons": ["sword"], "poison": 3},
   "enemies": [{"row": 1, "col": 2, "hp": 3}],
   "items": [{"row": 1, "col": 3, "kind": "potion"}],
   "status": "playing"
@@ -132,12 +149,13 @@ levels still to come, in order):
   goes up by 1. There is no carry limit.
 - R5.2 The drink command (`p` / `drink`) can be used on any turn while the game
   is `playing`. It uses one potion and restores 10 HP, but never above the
-  maximum of 20.
+  maximum of 20. It also cures poison (R10.5, added in round 4).
 - R5.3 Drinking with no potions does nothing except return a message.
-- R5.4 Drinking at full HP (20) is refused: the potion is kept and a message
-  is returned.
+- R5.4 Drinking at full HP (20) while not poisoned is refused: the potion is
+  kept and a message is returned. (Changed in round 4: a poisoned player at
+  full HP may drink, to cure the poison.)
 - R5.5 Drinking takes the player's turn but nothing else happens, because
-  enemies only act when attacked.
+  enemies only act when attacked, and poison does not hurt on a drink turn.
 
 ## R6: Weapons
 
@@ -163,8 +181,9 @@ levels still to come, in order):
   unchanged. HP is not restored between levels.
 - R7.4 Items and enemies left behind on a level are gone; only what the player
   collected carries over.
-- R7.5 Every enemy has the same stats on every level (8 HP, 3 damage). Later
-  levels are harder through more enemies and fewer potions.
+- R7.5 Every enemy has the same stats on every level (12 HP, 3 damage,
+  poisons on hit; changed in round 4 by R9 and R10). Later levels are harder
+  through more enemies and fewer potions.
 - R7.6 Every built-in level follows the map rules, and its exit can be reached
   from its `@` (walking through enemy tiles counts, since enemies can be killed).
 
@@ -175,6 +194,38 @@ levels still to come, in order):
 - R8.2 The built-in levels and the help text use the new symbols.
 - R8.3 Saves store item kinds by name (`"sword"`), not by symbol, so no save
   format change is needed for R8.
+
+## R9: Tougher enemies (round 4)
+
+- R9.1 Every enemy starts with 12 HP instead of 8, on every level, including
+  all enemies on the built-in levels. Enemy damage stays 3.
+- R9.2 So more hits are needed. Hits to kill an unhurt enemy, by attack:
+  5 → 3 hits; 6, 8, 10 or 11 → 2 hits; 12 or more → 1 hit. The sword alone
+  (Atk 8) and the axe alone (Atk 10) no longer kill in one hit; the sword and
+  axe together (Atk 13) do.
+- R9.3 Enemies in a round 3 save keep their saved HP (R4.5).
+
+## R10: Poison (round 4)
+
+- R10.1 Every enemy is poisonous. Whenever an enemy hits back (R2.3), the
+  player is poisoned for 3 turns. An attack that kills the enemy causes no
+  hit-back and so no poison.
+- R10.2 At the start of each turn (see Turns) while poisoned, before the
+  action is carried out, poison deals 1 damage and the turns left go down by
+  1. At 0 turns left the poison wears off. The turn of the hit-back itself
+  costs no poison damage; the next 3 turns cost 1 HP each.
+- R10.3 Poison does not stack. A hit-back while already poisoned resets the
+  turns left to 3 (after that turn's own poison damage).
+- R10.4 If poison brings HP to 0, the game is `lost` and the action of that
+  turn is not carried out (e.g. the player does not move).
+- R10.5 Drinking a potion cures poison: it heals as in R5.2 and sets the
+  turns left to 0, and poison does not hurt on that turn. A poisoned player
+  at full HP may drink: the potion is used, heals 0 HP and cures the poison.
+- R10.6 Things that are not turns (wall bumps, refused drinks, commands after
+  game over, `save`/`load`/`help`/`quit`) do not make poison tick.
+- R10.7 Poison carries over to the next level like HP (R7.3). Moving onto an
+  exit is a turn, so poison ticks before the level changes or the game is won.
+- R10.8 Poison turns left are saved and loaded (R4).
 
 ## Level 1 (the round 2 default map, new symbols)
 
@@ -230,9 +281,11 @@ Eight enemies, two potions, and a dagger.
 
 Eleven enemies, one potion, no weapons.
 
-## Out of scope for round 3
+## Out of scope for round 4
 
-Random maps, stronger enemies on later levels, healing between levels,
+Random maps, stronger enemies on later levels, enemies that differ from each
+other (a separate poison enemy type), poison that stacks, other status
+effects, enemy HP shown on the map, healing between levels,
 going back to an earlier level, enemy movement, dropping or swapping weapons,
 items other than potions and the three weapons, defense or max-HP stats,
 single-keypress input, colour, and named save slots.
