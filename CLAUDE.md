@@ -23,6 +23,9 @@ Standing rules for working in this repository.
 - Older save versions keep loading: when bumping `SAVE_VERSION`, add an upgrade step in
   `from_dict` and a test for it, rather than rejecting old saves. Each step goes up exactly
   one version (`_upgrade_v1` → 2, `_upgrade_v2` → 3), so the steps chain.
+- Test anything that differs by level (such as enemy stats, R11) on the level as the player
+  reaches it in the default game (`Game.from_levels(LEVELS)`, then go through each exit).
+  Don't use `Game.from_map(LEVELS[i])` for this: it always builds level 1.
 - When adding a command or game action, say in `spec.md`'s "Turns" section whether it is a
   turn (poison ticks first, R10) or not, and test both the action and its poison behaviour.
 - Record decisions that had real alternatives as `docs/decisions/NNNN-<topic>.md` Y-statements,
