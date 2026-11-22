@@ -9,9 +9,9 @@ def test_r6_weapon_kinds_have_varying_bonuses():
     assert WEAPONS == {"dagger": 1, "sword": 3, "axe": 5}
 
 
-@pytest.mark.parametrize("char, kind", [("d", "dagger"), ("s", "sword"), ("a", "axe")])
+@pytest.mark.parametrize("char, kind", [("-", "dagger"), ("/", "sword"), ("T", "axe")])
 def test_r6_weapons_are_read_from_the_map(char, kind):
-    """R6.1: weapon letters on the map become weapon items on floor tiles."""
+    """R6.1/R8.1: weapon symbols on the map become weapon items on floor tiles."""
     game = Game.from_map([f"@{char}X"])
     assert game.items == [Item((0, 1), kind)]
     assert game.tiles == ["..X"]
@@ -24,7 +24,7 @@ def test_r6_base_attack_without_weapons():
     assert game.attack == PLAYER_ATTACK == 5
 
 
-@pytest.mark.parametrize("char, kind, bonus", [("d", "dagger", 1), ("s", "sword", 3), ("a", "axe", 5)])
+@pytest.mark.parametrize("char, kind, bonus", [("-", "dagger", 1), ("/", "sword", 3), ("T", "axe", 5)])
 def test_r6_stepping_on_weapon_equips_it(char, kind, bonus):
     """R6.2: moving onto a weapon equips it, removes it and raises attack by its bonus."""
     game = Game.from_map([f"@{char}X"])
@@ -38,7 +38,7 @@ def test_r6_stepping_on_weapon_equips_it(char, kind, bonus):
 
 def test_r6_weapon_bonuses_stack():
     """R6.3: every weapon collected adds its bonus (dagger + sword = 9)."""
-    game = Game.from_map(["@ds.X"])
+    game = Game.from_map(["@-/.X"])
     game.move("right")
     game.move("right")
     assert game.weapons == ["dagger", "sword"]
@@ -47,7 +47,7 @@ def test_r6_weapon_bonuses_stack():
 
 def test_r6_same_weapon_kind_stacks():
     """R6.3: two of the same kind both count."""
-    game = Game.from_map(["@aa.X"])
+    game = Game.from_map(["@TT.X"])
     game.move("right")
     game.move("right")
     assert game.attack == 5 + 5 + 5
@@ -55,7 +55,7 @@ def test_r6_same_weapon_kind_stacks():
 
 def test_r6_attack_uses_weapon_bonus():
     """R6.2/R2.1: an attack deals the boosted damage."""
-    game = Game.from_map(["#####", "d@E.#", "####X"])
+    game = Game.from_map(["#####", "-@E.#", "####X"])
     game.move("left")
     game.move("right")
     game.move("right")
@@ -64,7 +64,7 @@ def test_r6_attack_uses_weapon_bonus():
 
 def test_r6_strong_attack_kills_in_one_hit_without_hit_back():
     """R6.2/R2.2: with an axe (attack 10) an 8 HP enemy dies in one hit and does not hit back."""
-    game = Game.from_map(["#####", "a@E.#", "####X"])
+    game = Game.from_map(["#####", "T@E.#", "####X"])
     game.move("left")
     game.move("right")
     message = game.move("right")

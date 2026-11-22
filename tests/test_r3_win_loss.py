@@ -56,3 +56,32 @@ def test_r3_repeated_combat_ends_in_loss():
         game.move("left")
     assert game.status == "lost"
     assert game.player_hp == 0
+
+
+def test_r3_exit_of_earlier_level_is_not_a_win():
+    """R3.1 (changed): reaching the exit of level 1 of 2 does not win the game."""
+    game = Game.from_levels([["@X"], ["@.X"]])
+    message = game.move("right")
+    assert game.status == "playing"
+    assert "win" not in message.lower()
+
+
+def test_r3_exit_of_last_level_wins():
+    """R3.1 (changed): only the exit of the last level wins."""
+    game = Game.from_levels([["@X"], ["@.X"]])
+    game.move("right")
+    game.move("right")
+    assert game.status == "playing"
+    message = game.move("right")
+    assert game.status == "won"
+    assert game.level == 2
+    assert "win" in message.lower()
+
+
+def test_r3_losing_on_a_later_level():
+    """R3.2: HP reaching 0 on level 2 loses the game."""
+    game = Game.from_levels([["@X"], ["@E.X"]])
+    game.move("right")
+    game.player_hp = 3
+    game.move("right")
+    assert game.status == "lost"
