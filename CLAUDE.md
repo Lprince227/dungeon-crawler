@@ -14,10 +14,15 @@ Standing rules for working in this repository.
 - Keep game rules in `dungeon/game.py` with no `input()`/`print()`. Terminal I/O belongs in
   `dungeon/cli.py`.
 - When game behaviour changes, update `spec.md` in the same piece of work. Tests follow `spec.md`.
-- When `Game` or `Enemy` gains or changes state, update `to_dict`, `from_dict` (including
-  validation) and the R4 tests. Bump `SAVE_VERSION` if the save format changes.
+- When a round changes an existing requirement (as round 3 changed R3), rewrite the existing
+  tests for the old behaviour so they test the new rule on the default game (`LEVELS`), say
+  "changed in round N" in their docstrings, and write a decision record for the change itself.
+  Passing old tests are not proof: they may only cover a case the change left alone.
+- When `Game`, `Enemy` or `Item` gains or changes state, update `to_dict`, `from_dict`
+  (including validation) and the R4 tests. Bump `SAVE_VERSION` if the save format changes.
 - Older save versions keep loading: when bumping `SAVE_VERSION`, add an upgrade step in
-  `from_dict` (like `_upgrade_v1`) and a test for it, rather than rejecting old saves.
+  `from_dict` and a test for it, rather than rejecting old saves. Each step goes up exactly
+  one version (`_upgrade_v1` → 2, `_upgrade_v2` → 3), so the steps chain.
 - Record decisions that had real alternatives as `docs/decisions/NNNN-<topic>.md` Y-statements,
   using this template (handoff decision lists use it too):
   "In the context of <use case or component>, facing <concern>, we decided for <option>
