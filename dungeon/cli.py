@@ -41,8 +41,9 @@ HELP = """Commands (type, then press Enter):
   load            load savegame.json
   help            show this list
   quit            leave without saving
-Walk over ! to pick up a potion, and over d / s / a to equip a
-dagger (Atk +1), sword (Atk +3) or axe (Atk +5). Weapon bonuses stack.
+Walk over ! to pick up a potion. Walk over a weapon to equip it:
+  - dagger (Atk +1)   / sword (Atk +3)   T axe (Atk +5)
+Weapon bonuses stack.
 Reach X to win. If your HP hits 0 you lose."""
 
 

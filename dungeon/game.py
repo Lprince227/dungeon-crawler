@@ -14,8 +14,8 @@ WALL, FLOOR, EXIT, PLAYER, ENEMY = "#", ".", "X", "@", "E"
 POTION = "potion"
 # Attack bonus of each weapon kind (R6).
 WEAPONS = {"dagger": 1, "sword": 3, "axe": 5}
-# Map character for each item kind.
-ITEM_CHARS = {"!": POTION, "d": "dagger", "s": "sword", "a": "axe"}
+# Map character for each item kind. None of them is a command key (R8).
+ITEM_CHARS = {"!": POTION, "-": "dagger", "/": "sword", "T": "axe"}
 ITEM_KINDS = set(ITEM_CHARS.values())
 
 PLAYER_START_HP = 20
@@ -38,13 +38,13 @@ DIRECTIONS = {
 
 DEFAULT_MAP = [
     "###########",
-    "#@d.#....!#",
+    "#@-.#....!#",
     "#.#.#.###.#",
-    "#.#E..#Es.#",
+    "#.#E..#E/.#",
     "#.#####.#.#",
     "#!..E...#.#",
     "###.###.#E#",
-    "#a....#...#",
+    "#T....#...#",
     "#.###E#####",
     "#...E..!.X#",
     "###########",
