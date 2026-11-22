@@ -22,3 +22,5 @@ People who want a quick game during a short break. Many people dont have time to
 - R9: Make the enemies harder by giving them more hp
 - R10: Give the enemies the status move poison (damage over time)
 
+# Round 5 requirements
+- R11: Give the levels a difficulty curve so each level is harder than the last. level 2 enemies having more hp and level 3 enemies having more hp and attack power.
