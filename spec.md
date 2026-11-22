@@ -1,4 +1,4 @@
-# Spec: Terminal Dungeon Crawler (round 4)
+# Spec: Terminal Dungeon Crawler (round 5)
 
 A short, turn-based dungeon game that runs in a terminal. One game should take
 a few minutes. Python 3.12, standard library only (pytest for tests).
@@ -70,14 +70,16 @@ Combat is "bump to attack" and has no randomness:
 
 - The player starts with 20 HP (also the maximum HP) and a base attack of 5.
   The player's attack is the base attack plus every weapon bonus (R6).
-- Each enemy starts with 12 HP (8 before round 4, see R9) and deals 3 damage
-  per attack.
+- Each enemy's HP and damage depend on the level it is on (R11): 12 HP and
+  3 damage on level 1, 16 HP and 3 damage on level 2, 20 HP and 4 damage on
+  level 3. (Before round 5 every enemy had 12 HP and 3 damage; before round 4,
+  8 HP.)
 - R2.1 Moving into an enemy's tile attacks it instead of moving. The enemy
   loses HP equal to the player's attack.
 - R2.2 If the enemy's HP drops to 0 or below, it is removed from the map. The
   player stays on their original tile and can step into the freed tile next turn.
 - R2.3 If the enemy survives, it hits back right away. The player loses HP
-  equal to the enemy's attack, and is poisoned (R10).
+  equal to that enemy's attack, and is poisoned (R10).
 - R2.4 Enemies do not move. Each enemy keeps its own HP between attacks.
 - HP is never shown below 0. It is clamped to 0.
 
@@ -98,7 +100,7 @@ Combat is "bump to attack" and has no randomness:
 
 - R4.1 Saving writes the full game state (current level's map, level number,
   the maps of the levels still to come, player position, HP, potions carried
-  and weapons collected, poison turns left, every enemy's position and HP,
+  and weapons collected, poison turns left, every enemy's position, HP and attack,
   every item still on the map, status) to a JSON file.
 - R4.2 Loading that file restores a game equal to the one that was saved, so
   play continues exactly where it left off.
@@ -110,9 +112,15 @@ Combat is "bump to attack" and has no randomness:
   shares a tile with another item, an enemy or the player. Round 3 adds: the
   level number is not an integer of 1 or more; `next_levels` is not a list of
   maps that each pass the map rules above. Round 4 adds: the player's
-  `poison` is not an integer from 0 to 3.
+  `poison` is not an integer from 0 to 3. Round 5 adds: an enemy's `attack`
+  is missing or is not an integer of 1 or more.
 - R4.4 The program can be started from a save: `py -m dungeon --load`.
-- R4.5 The save file has `"version": 4`. Older saves still load:
+- R4.5 The save file has `"version": 5`. Older saves still load:
+  - A round 4 save (`"version": 4`) gives each enemy on the saved level the
+    attack for that save's level number (R11: 3 on levels 1 and 2, 4 on
+    level 3 and later). Enemies keep the HP stored in the save, so unhurt
+    enemies on a saved level 2 or 3 still have 12 HP. Levels still to come
+    are built from their maps and get the round 5 stats for their level.
   - A round 3 save (`"version": 3`) loads with the player not poisoned
     (`poison` 0). Its enemies keep the HP stored in the save (so an unhurt
     enemy on the saved level still has 8 HP), while enemies on the levels
@@ -122,21 +130,21 @@ Combat is "bump to attack" and has no randomness:
     and gets no further levels.
   - A round 1 save (`"version": 1`) is first upgraded to version 2 (0 potions,
     no weapons, no items on the map), then as above.
-  - Each upgrade goes up one version: 1 → 2 → 3 → 4.
+  - Each upgrade goes up one version: 1 → 2 → 3 → 4 → 5.
   - Any other version is rejected with `SaveError`.
 
-Version 4 layout (`map` is the current level with only `#`, `.` and `X`;
+Version 5 layout (`map` is the current level with only `#`, `.` and `X`;
 `next_levels` holds the full text maps, with `@`, enemies and items, of the
 levels still to come, in order):
 
 ```json
 {
-  "version": 4,
+  "version": 5,
   "level": 1,
   "map": ["#####", "#...#", "####X"],
   "next_levels": [["@.X"]],
   "player": {"row": 1, "col": 1, "hp": 17, "potions": 0, "weapons": ["sword"], "poison": 3},
-  "enemies": [{"row": 1, "col": 2, "hp": 3}],
+  "enemies": [{"row": 1, "col": 2, "hp": 3, "attack": 3}],
   "items": [{"row": 1, "col": 3, "kind": "potion"}],
   "status": "playing"
 }
@@ -181,9 +189,9 @@ levels still to come, in order):
   unchanged. HP is not restored between levels.
 - R7.4 Items and enemies left behind on a level are gone; only what the player
   collected carries over.
-- R7.5 Every enemy has the same stats on every level (12 HP, 3 damage,
-  poisons on hit; changed in round 4 by R9 and R10). Later levels are harder
-  through more enemies and fewer potions.
+- R7.5 (changed in round 5 by R11) Later levels are harder: more enemies,
+  no more potions, and stronger enemies (R11). All enemies on one level have
+  the same stats, and every enemy on every level poisons on hit (R10).
 - R7.6 Every built-in level follows the map rules, and its exit can be reached
   from its `@` (walking through enemy tiles counts, since enemies can be killed).
 
@@ -197,9 +205,9 @@ levels still to come, in order):
 
 ## R9: Tougher enemies (round 4)
 
-- R9.1 Every enemy starts with 12 HP instead of 8, on every level, including
-  all enemies on the built-in levels. Enemy damage stays 3.
-- R9.2 So more hits are needed. Hits to kill an unhurt enemy, by attack:
+- R9.1 (changed in round 5 by R11) Level 1 enemies start with 12 HP instead
+  of 8, and deal 3 damage. Enemies on later levels have more (R11).
+- R9.2 So more hits are needed. Hits to kill an unhurt level 1 enemy, by attack:
   5 → 3 hits; 6, 8, 10 or 11 → 2 hits; 12 or more → 1 hit. The sword alone
   (Atk 8) and the axe alone (Atk 10) no longer kill in one hit; the sword and
   axe together (Atk 13) do.
@@ -226,6 +234,32 @@ levels still to come, in order):
 - R10.7 Poison carries over to the next level like HP (R7.3). Moving onto an
   exit is a turn, so poison ticks before the level changes or the game is won.
 - R10.8 Poison turns left are saved and loaded (R4).
+
+## R11: Difficulty rises by level (round 5)
+
+- R11.1 Enemy stats by level number:
+
+  | Level | Enemy HP | Enemy damage |
+  |-------|----------|--------------|
+  | 1     | 12       | 3            |
+  | 2     | 16       | 3            |
+  | 3     | 20       | 4            |
+
+  A level past 3 (only possible in a custom game) uses the level 3 stats.
+- R11.2 The stats go by the level's number in the game, not by which map it
+  is: a game built from a single map is level 1, and the second map of any
+  game built from several maps is level 2.
+- R11.3 An enemy gets its stats when its level is loaded (a new game, or
+  reaching the exit of the level before). Each enemy keeps its own HP and
+  attack; both are saved and loaded with it (R4).
+- R11.4 Poison is the same on every level: 1 damage for 3 turns (R10).
+- R11.5 Reaching a new level says how strong its enemies are, e.g.
+  `Enemies here have 16 HP and hit for 3.`
+- R11.6 Hits to kill an unhurt enemy are its HP divided by the player's
+  attack, rounded up. Level 2 (16 HP): Atk 5 → 4 hits; 6 or 7 → 3; 8 to 15 →
+  2; 16 or more → 1. Level 3 (20 HP): Atk 5 or 6 → 4 hits; 7 to 9 → 3; 10 to
+  19 → 2; 20 or more → 1. The default game has at most Atk 15, so no level 2
+  or 3 enemy dies in one hit there.
 
 ## Level 1 (the round 2 default map, new symbols)
 
@@ -281,10 +315,10 @@ Eight enemies, two potions, and a dagger.
 
 Eleven enemies, one potion, no weapons.
 
-## Out of scope for round 4
+## Out of scope for round 5
 
-Random maps, stronger enemies on later levels, enemies that differ from each
-other (a separate poison enemy type), poison that stacks, other status
+Random maps, enemies that differ from each other on the same level (a
+separate poison enemy type), poison that grows stronger by level, poison that stacks, other status
 effects, enemy HP shown on the map, healing between levels,
 going back to an earlier level, enemy movement, dropping or swapping weapons,
 items other than potions and the three weapons, defense or max-HP stats,
