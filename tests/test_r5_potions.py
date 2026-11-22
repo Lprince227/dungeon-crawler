@@ -2,7 +2,7 @@
 import pytest
 
 from dungeon.cli import parse_command
-from dungeon.game import PLAYER_MAX_HP, POTION_HEAL, Game, Item
+from dungeon.game import LEVELS, PLAYER_MAX_HP, POTION_HEAL, Game, Item
 
 
 def test_r5_potions_are_read_from_the_map():
@@ -64,14 +64,18 @@ def test_r5_drink_with_no_potions_changes_nothing():
 
 
 def test_r5_drink_at_full_hp_keeps_potion():
-    """R5.4 (changed in round 4 by R10): drinking at full HP while not poisoned is refused and
-    the potion is kept. A poisoned player at full HP may drink (see test_r10_poison.py)."""
-    game = Game.from_map(["@.X"])
+    """R5.4 (changed in round 4 by R10, and in round 6 by R12): on the default game, drinking
+    at full HP while neither poisoned nor paralysed is refused and the potion is kept. A
+    paralysed player at full HP may drink (poisoned: see test_r10_poison.py)."""
+    game = Game.from_levels(LEVELS)
     game.potions = 2
     message = game.drink()
     assert game.player_hp == PLAYER_MAX_HP
     assert game.potions == 2
     assert "full" in message.lower()
+    game.paralysis = 2
+    game.drink()
+    assert (game.player_hp, game.paralysis, game.potions) == (PLAYER_MAX_HP, 0, 1)
 
 
 def test_r5_drink_after_combat_damage():

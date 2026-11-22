@@ -159,7 +159,9 @@ def test_r11_reaching_a_level_says_how_strong_its_enemies_are(level, hp):
     ],
 )
 def test_r11_hits_needed_by_attack(level, weapons, hits):
-    """R11.6: hits to kill an unhurt level 2 (16 HP) or level 3 (20 HP) enemy, by attack."""
+    """R11.6: hits to kill an unhurt level 2 (16 HP) or level 3 (20 HP) enemy, by attack.
+    Changed in round 6: level 3 hit-backs paralyse (R12), so the counts assume no paralysis
+    and it is cleared between hits, like HP and poison."""
     game = Game.from_levels([["@X"]] * (level - 1) + [["@E.X"]])
     for _ in range(level - 1):
         game.move("right")
@@ -167,7 +169,7 @@ def test_r11_hits_needed_by_attack(level, weapons, hits):
     game.weapons = list(weapons)
     count = 0
     while game.enemies:
-        game.player_hp, game.poison = 20, 0
+        game.player_hp, game.poison, game.paralysis = 20, 0, 0
         game.move("right")
         count += 1
     assert count == hits
