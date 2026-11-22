@@ -24,3 +24,6 @@ People who want a quick game during a short break. Many people dont have time to
 
 # Round 5 requirements
 - R11: Give the levels a difficulty curve so each level is harder than the last. level 2 enemies having more hp and level 3 enemies having more hp and attack power.
+
+# Round 6 requirements
+- R12: The enemies can now inflict a new status called paralysis that will cause the player to have a 75% chance to not be able to attack that turn for 3 turns. only level 3 enemies can inflict this status and a potion can cure it.
