@@ -24,8 +24,12 @@ POTION_HEAL = 10
 PLAYER_ATTACK = 5
 ENEMY_START_HP = 12  # 8 before round 4 (R9)
 ENEMY_ATTACK = 3
+# Every enemy hit-back poisons the player: POISON_DAMAGE at the start of each of the
+# next POISON_TURNS turns. A new hit resets the count; it does not stack (R10).
+POISON_TURNS = 3
+POISON_DAMAGE = 1
 
-SAVE_VERSION = 3
+SAVE_VERSION = 4
 GAME_OVER = "Game over. Start a new game or load a save."
 STATUSES = ("playing", "won", "lost")
 
@@ -115,6 +119,8 @@ class Game:
     # Level number (1-based) and the full text maps of the levels still to come (R7).
     level: int = 1
     next_levels: list[list[str]] = field(default_factory=list)
+    # Turns of poison left (R10). 0 means not poisoned.
+    poison: int = 0
 
     @classmethod
     def from_levels(cls, levels: list[list[str]]) -> Game:
@@ -186,13 +192,23 @@ class Game:
         return next((i for i in self.items if i.pos == pos), None)
 
     def move(self, direction: str) -> str:
-        """Try to move the player one tile. Returns a message describing the result."""
+        """Try to move the player one tile. Returns a message describing the result.
+
+        A move or attack is a turn, so poison ticks first (R10.2). A wall bump is not a turn.
+        """
         if self.status != "playing":
             return GAME_OVER
         dr, dc = DIRECTIONS[direction]
         target = (self.player[0] + dr, self.player[1] + dc)
         if self.tile_at(target) == WALL:
             return "A wall blocks your way."
+        poison = self._poison_tick()
+        if self.status == "lost":
+            return poison  # poison killed the player before the action (R10.4)
+        return poison + self._step(direction, target)
+
+    def _step(self, direction: str, target: tuple[int, int]) -> str:
+        """Carry out a move onto a non-wall tile: attack, exit, or walk (and pick up)."""
         enemy = self.enemy_at(target)
         if enemy is not None:
             return self._attack(enemy)
@@ -207,6 +223,23 @@ class Game:
         if item is not None:
             message += " " + self._pick_up(item)
         return message
+
+    def _poison_tick(self) -> str:
+        """Start of a turn: poison deals its damage and counts down (R10.2).
+
+        Returns a message (ending in a space unless the player died), or "" if not poisoned.
+        """
+        if self.poison == 0:
+            return ""
+        self.poison -= 1
+        self.player_hp = max(0, self.player_hp - POISON_DAMAGE)
+        message = f"Poison deals {POISON_DAMAGE} damage (HP {self.player_hp}/{PLAYER_MAX_HP})."
+        if self.player_hp == 0:
+            self.status = "lost"
+            return message + " You have fallen. You lost!"
+        if self.poison == 0:
+            message += " The poison wears off."
+        return message + " "
 
     def _next_level(self) -> str:
         """Replace the map, enemies and items with the next level's. Stats carry over (R7.3)."""
@@ -226,17 +259,25 @@ class Game:
         return f"You equip a {item.kind}: Atk +{WEAPONS[item.kind]} (Atk {self.attack})."
 
     def drink(self) -> str:
-        """Drink one potion: heal POTION_HEAL HP, never above PLAYER_MAX_HP."""
+        """Drink one potion: heal POTION_HEAL HP, never above PLAYER_MAX_HP, and cure poison.
+
+        Poison does not tick on a drink turn (R10.5). At full HP the drink is refused
+        unless the player is poisoned.
+        """
         if self.status != "playing":
             return GAME_OVER
         if self.potions == 0:
             return "You have no potions."
-        if self.player_hp >= PLAYER_MAX_HP:
+        if self.player_hp >= PLAYER_MAX_HP and self.poison == 0:
             return "You are already at full health. You keep the potion."
         healed = min(POTION_HEAL, PLAYER_MAX_HP - self.player_hp)
         self.player_hp += healed
         self.potions -= 1
-        return f"You drink a potion and heal {healed} HP (HP {self.player_hp}/{PLAYER_MAX_HP})."
+        message = f"You drink a potion and heal {healed} HP (HP {self.player_hp}/{PLAYER_MAX_HP})."
+        if self.poison:
+            self.poison = 0
+            message += " The poison is cured."
+        return message
 
     def _attack(self, enemy: Enemy) -> str:
         """Bump attack: hit the enemy; if it survives it hits back."""
@@ -246,9 +287,10 @@ class Game:
             self.enemies.remove(enemy)
             return f"You hit the enemy for {damage} and defeat it!"
         self.player_hp = max(0, self.player_hp - ENEMY_ATTACK)
+        self.poison = POISON_TURNS  # reset, not stacked (R10.3)
         message = (
             f"You hit the enemy for {damage} (enemy HP {enemy.hp}). "
-            f"It hits back for {ENEMY_ATTACK}."
+            f"It hits back for {ENEMY_ATTACK} and poisons you ({POISON_TURNS} turns)."
         )
         if self.player_hp == 0:
             self.status = "lost"
@@ -267,6 +309,7 @@ class Game:
                 "hp": self.player_hp,
                 "potions": self.potions,
                 "weapons": list(self.weapons),
+                "poison": self.poison,
             },
             "enemies": [{"row": e.pos[0], "col": e.pos[1], "hp": e.hp} for e in self.enemies],
             "items": [{"row": i.pos[0], "col": i.pos[1], "kind": i.kind} for i in self.items],
@@ -278,12 +321,15 @@ class Game:
         """Rebuild a game from to_dict() output. Raises SaveError if invalid.
 
         Older saves are upgraded step by step: version 1 (round 1, no items) to
-        version 2, then version 2 (round 2, one map) to version 3.
+        version 2, version 2 (round 2, one map) to version 3, then version 3
+        (round 3, no poison) to version 4.
         """
         if isinstance(data, dict) and data.get("version") == 1:
             data = _upgrade_v1(data)
         if isinstance(data, dict) and data.get("version") == 2:
             data = _upgrade_v2(data)
+        if isinstance(data, dict) and data.get("version") == 3:
+            data = _upgrade_v3(data)
         try:
             if not isinstance(data, dict) or data.get("version") != SAVE_VERSION:
                 raise SaveError("unsupported or missing save version")
@@ -312,6 +358,7 @@ class Game:
                 items=[Item((_int(i["row"]), _int(i["col"])), _str(i["kind"])) for i in data["items"]],
                 level=_int(data["level"]),
                 next_levels=_map_list(data["next_levels"]),
+                poison=_int(p["poison"]),
             )
             for lines in game.next_levels:
                 cls.from_map(lines)
@@ -327,6 +374,8 @@ class Game:
             raise SaveError("player position or HP is invalid")
         if game.potions < 0:
             raise SaveError("potion count is invalid")
+        if not 0 <= game.poison <= POISON_TURNS:
+            raise SaveError("poison turns are invalid")
         if any(w not in WEAPONS for w in game.weapons):
             raise SaveError("unknown weapon in save")
         for enemy in game.enemies:
@@ -355,6 +404,17 @@ def _upgrade_v2(data: dict) -> dict:
     """
     upcoming = [] if data.get("status") == "won" else [list(m) for m in LEVELS[1:]]
     return dict(data, version=3, level=1, next_levels=upcoming)
+
+
+def _upgrade_v3(data: dict) -> dict:
+    """Turn a round 3 save into a version 4 save: the player is not poisoned.
+
+    Enemy HP is kept as saved (ADR 0007); levels still to come get the new HP from their maps.
+    """
+    data = dict(data, version=4)
+    if isinstance(data.get("player"), dict):
+        data["player"] = dict(data["player"], poison=0)
+    return data
 
 
 def _map_list(value: object) -> list[list[str]]:
