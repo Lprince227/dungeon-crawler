@@ -36,7 +36,7 @@ def parse_command(text: str) -> tuple[str, str | None]:
 
 HELP = """Commands (type, then press Enter):
   w / a / s / d   move up / left / down / right (walk into an enemy to attack)
-  p / drink       drink a potion (heals 10 HP, up to 20)
+  p / drink       drink a potion (heals 10 HP, up to 20, and cures poison)
   save            save to savegame.json
   load            load savegame.json
   help            show this list
@@ -44,6 +44,8 @@ HELP = """Commands (type, then press Enter):
 Walk over ! to pick up a potion. Walk over a weapon to equip it:
   - dagger (Atk +1)   / sword (Atk +3)   T axe (Atk +5)
 Weapon bonuses stack.
+Enemies have 12 HP. When one survives your hit it hits back for 3 and poisons
+you: you lose 1 HP on each of your next 3 moves. A potion cures poison.
 Reach X to go down to the next level. HP, potions and weapons come with you.
 Reach X on the last level to win. If your HP hits 0 you lose."""
 
@@ -62,6 +64,8 @@ def render(game: Game) -> str:
         f"Potions: {game.potions}   Weapons: {', '.join(game.weapons) or 'none'}   "
         f"Enemies left: {len(game.enemies)}"
     )
+    if game.poison:
+        status += f"   Poisoned: {game.poison} turn{'s' if game.poison != 1 else ''}"
     return f"{grid}\n{status}"
 
 
