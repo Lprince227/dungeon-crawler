@@ -17,3 +17,8 @@ People who want a quick game during a short break. Many people dont have time to
 - R3 (changed): reaching the end of a level no longer results in a win. only reaching the end to the last level results in a win
 - R7: Create multiple levels (at least 3) instead of winning the game outright. All items collected will carry over to the other level and all stats (hp and atk) and stat gains carry over as well
 - R8: create map symbols that aren't w,a,s,d
+
+# Round 4 requirements 
+- R9: Make the enemies harder by giving them more hp
+- R10: Give the enemies the status move poison (damage over time)
+
