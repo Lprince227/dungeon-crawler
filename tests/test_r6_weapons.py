@@ -1,7 +1,7 @@
 """Tests for R6: weapon pickups with varying attack bonuses that stack."""
 import pytest
 
-from dungeon.game import DEFAULT_MAP, ENEMY_START_HP, PLAYER_ATTACK, WEAPONS, Game, Item
+from dungeon.game import DEFAULT_MAP, ENEMY_START_HP, LEVELS, PLAYER_ATTACK, WEAPONS, Game, Item
 
 
 def test_r6_weapon_kinds_have_varying_bonuses():
@@ -63,14 +63,24 @@ def test_r6_attack_uses_weapon_bonus():
 
 
 def test_r6_strong_attack_kills_in_one_hit_without_hit_back():
-    """R6.2/R2.2: with an axe (attack 10) an 8 HP enemy dies in one hit and does not hit back."""
-    game = Game.from_map(["#####", "T@E.#", "####X"])
-    game.move("left")
-    game.move("right")
-    message = game.move("right")
-    assert game.enemies == []
-    assert game.player_hp == 20
+    """R6.2/R2.2 (changed in round 4 by R9): on the default game the axe alone (Atk 10) no
+    longer kills a 12 HP enemy in one hit, but sword + axe (Atk 13) does, with no hit-back.
+    Before round 4 the axe alone one-hit an 8 HP enemy."""
+    game = Game.from_levels(LEVELS)
+    game.player = (3, 4)  # next to the enemy at (3, 3)
+    game.weapons = ["axe"]
+    message = game.move("left")
+    assert game.enemy_at((3, 3)).hp == 2
+    assert game.player_hp == 17
     assert "10" in message
+
+    game = Game.from_levels(LEVELS)
+    game.player = (3, 4)
+    game.weapons = ["sword", "axe"]
+    message = game.move("left")
+    assert game.enemy_at((3, 3)) is None
+    assert (game.player_hp, game.poison) == (20, 0)
+    assert "13" in message
 
 
 def test_r6_default_map_has_items():

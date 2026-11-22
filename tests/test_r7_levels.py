@@ -7,6 +7,8 @@ from dungeon.game import (
     DEFAULT_MAP,
     ENEMY_ATTACK,
     ENEMY_START_HP,
+    DIRECTIONS,
+    FLOOR,
     LEVELS,
     WALL,
     Game,
@@ -107,13 +109,24 @@ def test_r7_things_left_behind_do_not_carry_over():
 
 
 def test_r7_enemies_on_later_levels_have_the_same_stats():
-    """R7.5: an enemy on level 2 has 8 HP and hits back for 3."""
-    game = Game.from_levels([["@X"], ["@E.X"]])
-    game.move("right")
-    assert game.enemies[0].hp == ENEMY_START_HP
-    game.move("right")
-    assert game.enemies[0].hp == ENEMY_START_HP - 5
-    assert game.player_hp == 20 - ENEMY_ATTACK
+    """R7.5 (changed in round 4 by R9 and R10): on every level of the default game, enemies
+    have 12 HP, hit back for 3 and poison for 3 turns. Before round 4 they had 8 HP and no poison."""
+    for lines in LEVELS:
+        game = Game.from_map(lines)
+        assert {e.hp for e in game.enemies} == {ENEMY_START_HP} == {12}
+        enemy = game.enemies[0]
+        game.enemies = [enemy]
+        r, c = enemy.pos
+        direction = next(
+            d for d, (dr, dc) in DIRECTIONS.items() if game.tile_at((r - dr, c - dc)) == FLOOR
+        )
+        dr, dc = DIRECTIONS[direction]
+        game.items = []
+        game.player = (r - dr, c - dc)
+        game.move(direction)
+        assert enemy.hp == ENEMY_START_HP - 5
+        assert game.player_hp == 20 - ENEMY_ATTACK
+        assert game.poison == 3
 
 
 def test_r7_full_run_through_three_levels():

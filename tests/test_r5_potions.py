@@ -64,7 +64,8 @@ def test_r5_drink_with_no_potions_changes_nothing():
 
 
 def test_r5_drink_at_full_hp_keeps_potion():
-    """R5.4: drinking at full HP is refused and the potion is kept."""
+    """R5.4 (changed in round 4 by R10): drinking at full HP while not poisoned is refused and
+    the potion is kept. A poisoned player at full HP may drink (see test_r10_poison.py)."""
     game = Game.from_map(["@.X"])
     game.potions = 2
     message = game.drink()
