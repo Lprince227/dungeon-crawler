@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -30,8 +31,13 @@ ENEMY_START_HP, ENEMY_ATTACK = ENEMY_LEVEL_STATS[0]  # level 1
 # next POISON_TURNS turns. A new hit resets the count; it does not stack (R10).
 POISON_TURNS = 3
 POISON_DAMAGE = 1
+# Enemies on this level number and later also paralyse on a hit-back: for the next
+# PARALYSIS_TURNS turns, each attack fails with chance PARALYSIS_CHANCE (R12).
+PARALYSIS_LEVEL = 3
+PARALYSIS_TURNS = 3
+PARALYSIS_CHANCE = 0.75
 
-SAVE_VERSION = 5
+SAVE_VERSION = 6
 GAME_OVER = "Game over. Start a new game or load a save."
 STATUSES = ("playing", "won", "lost")
 
@@ -97,11 +103,17 @@ def enemy_stats(level: int) -> tuple[int, int]:
     return ENEMY_LEVEL_STATS[min(level, len(ENEMY_LEVEL_STATS)) - 1]
 
 
+def enemy_paralyses(level: int) -> bool:
+    """Whether a new enemy on the given level number paralyses on a hit-back (R12.1)."""
+    return level >= PARALYSIS_LEVEL
+
+
 @dataclass
 class Enemy:
     pos: tuple[int, int]
     hp: int = ENEMY_START_HP
     attack: int = ENEMY_ATTACK
+    paralyses: bool = False
 
 
 @dataclass
@@ -129,6 +141,10 @@ class Game:
     next_levels: list[list[str]] = field(default_factory=list)
     # Turns of poison left (R10). 0 means not poisoned.
     poison: int = 0
+    # Turns of paralysis left (R12). 0 means not paralysed.
+    paralysis: int = 0
+    # Source of the paralysis roll (R12.7). Not saved and not compared; tests may replace it.
+    rng: random.Random = field(default_factory=random.Random, compare=False, repr=False)
 
     @classmethod
     def from_levels(cls, levels: list[list[str]]) -> Game:
@@ -145,12 +161,13 @@ class Game:
     def from_map(cls, lines: list[str], level: int = 1) -> Game:
         """Build a new one-level game from a text map (see spec.md for the legend).
 
-        Enemies get the stats for `level` (R11); the game itself always starts as level 1.
+        Enemies get the stats for `level` (R11, R12.1); the game itself always starts as level 1.
         """
         if not lines or len({len(row) for row in lines}) != 1:
             raise ValueError("map must be non-empty and rectangular")
         players, exits, enemies, items, tiles = [], [], [], [], []
         enemy_hp, enemy_attack = enemy_stats(level)
+        paralyses = enemy_paralyses(level)
         for r, row in enumerate(lines):
             clean = []
             for c, ch in enumerate(row):
@@ -158,7 +175,7 @@ class Game:
                     players.append((r, c))
                     ch = FLOOR
                 elif ch == ENEMY:
-                    enemies.append(Enemy((r, c), enemy_hp, enemy_attack))
+                    enemies.append(Enemy((r, c), enemy_hp, enemy_attack, paralyses))
                     ch = FLOOR
                 elif ch in ITEM_CHARS:
                     items.append(Item((r, c), ITEM_CHARS[ch]))
@@ -206,7 +223,8 @@ class Game:
     def move(self, direction: str) -> str:
         """Try to move the player one tile. Returns a message describing the result.
 
-        A move or attack is a turn, so poison ticks first (R10.2). A wall bump is not a turn.
+        A move or attack is a turn, so poison ticks first (R10.2), then paralysis (R12.3).
+        A wall bump is not a turn.
         """
         if self.status != "playing":
             return GAME_OVER
@@ -217,12 +235,18 @@ class Game:
         poison = self._poison_tick()
         if self.status == "lost":
             return poison  # poison killed the player before the action (R10.4)
-        return poison + self._step(direction, target)
+        paralysed, paralysis = self._paralysis_tick()
+        return poison + self._step(direction, target, paralysed) + paralysis
 
-    def _step(self, direction: str, target: tuple[int, int]) -> str:
-        """Carry out a move onto a non-wall tile: attack, exit, or walk (and pick up)."""
+    def _step(self, direction: str, target: tuple[int, int], paralysed: bool = False) -> str:
+        """Carry out a move onto a non-wall tile: attack, exit, or walk (and pick up).
+
+        On a paralysed turn an attack may fail (R12.4); nothing else is affected.
+        """
         enemy = self.enemy_at(target)
         if enemy is not None:
+            if paralysed and self.rng.random() < PARALYSIS_CHANCE:
+                return "You are paralysed and can't attack!"
             return self._attack(enemy)
         self.player = target
         if self.tile_at(target) == EXIT:
@@ -253,6 +277,17 @@ class Game:
             message += " The poison wears off."
         return message + " "
 
+    def _paralysis_tick(self) -> tuple[bool, str]:
+        """Start of a turn, after poison: count paralysis down (R12.3).
+
+        Returns whether this turn is a paralysed turn, and a message (starting with a
+        space) if the paralysis wore off, else "".
+        """
+        if self.paralysis == 0:
+            return False, ""
+        self.paralysis -= 1
+        return True, " The paralysis wears off." if self.paralysis == 0 else ""
+
     def _next_level(self) -> str:
         """Replace the map, enemies and items with the next level's. Stats carry over (R7.3)."""
         self.level += 1
@@ -260,10 +295,13 @@ class Game:
         self.tiles, self.player = nxt.tiles, nxt.player
         self.enemies, self.items = nxt.enemies, nxt.items
         hp, attack = enemy_stats(self.level)
-        return (
+        message = (
             f"You reach the exit and go down to level {self.level} of {self.total_levels}. "
             f"Enemies here have {hp} HP and hit for {attack}."
         )
+        if enemy_paralyses(self.level):
+            message += " Their hits also paralyse you."
+        return message
 
     def _pick_up(self, item: Item) -> str:
         """Collect the item the player is standing on."""
@@ -275,16 +313,17 @@ class Game:
         return f"You equip a {item.kind}: Atk +{WEAPONS[item.kind]} (Atk {self.attack})."
 
     def drink(self) -> str:
-        """Drink one potion: heal POTION_HEAL HP, never above PLAYER_MAX_HP, and cure poison.
+        """Drink one potion: heal POTION_HEAL HP, never above PLAYER_MAX_HP, and cure
+        poison and paralysis.
 
-        Poison does not tick on a drink turn (R10.5). At full HP the drink is refused
-        unless the player is poisoned.
+        Neither ticks on a drink turn (R10.5, R12.5). At full HP the drink is refused
+        unless the player is poisoned or paralysed.
         """
         if self.status != "playing":
             return GAME_OVER
         if self.potions == 0:
             return "You have no potions."
-        if self.player_hp >= PLAYER_MAX_HP and self.poison == 0:
+        if self.player_hp >= PLAYER_MAX_HP and self.poison == 0 and self.paralysis == 0:
             return "You are already at full health. You keep the potion."
         healed = min(POTION_HEAL, PLAYER_MAX_HP - self.player_hp)
         self.player_hp += healed
@@ -293,10 +332,13 @@ class Game:
         if self.poison:
             self.poison = 0
             message += " The poison is cured."
+        if self.paralysis:
+            self.paralysis = 0
+            message += " The paralysis is cured."
         return message
 
     def _attack(self, enemy: Enemy) -> str:
-        """Bump attack: hit the enemy; if it survives it hits back."""
+        """Bump attack: hit the enemy; if it survives it hits back, poisons and may paralyse."""
         damage = self.attack
         enemy.hp -= damage
         if enemy.hp <= 0:
@@ -304,10 +346,12 @@ class Game:
             return f"You hit the enemy for {damage} and defeat it!"
         self.player_hp = max(0, self.player_hp - enemy.attack)
         self.poison = POISON_TURNS  # reset, not stacked (R10.3)
-        message = (
-            f"You hit the enemy for {damage} (enemy HP {enemy.hp}). "
-            f"It hits back for {enemy.attack} and poisons you ({POISON_TURNS} turns)."
-        )
+        message = f"You hit the enemy for {damage} (enemy HP {enemy.hp}). It hits back for {enemy.attack}"
+        if enemy.paralyses:
+            self.paralysis = PARALYSIS_TURNS  # reset, not stacked (R12.2)
+            message += f", poisons you ({POISON_TURNS} turns) and paralyses you ({PARALYSIS_TURNS} turns)."
+        else:
+            message += f" and poisons you ({POISON_TURNS} turns)."
         if self.player_hp == 0:
             self.status = "lost"
             message += " You have fallen. You lost!"
@@ -326,9 +370,10 @@ class Game:
                 "potions": self.potions,
                 "weapons": list(self.weapons),
                 "poison": self.poison,
+                "paralysis": self.paralysis,
             },
             "enemies": [
-                {"row": e.pos[0], "col": e.pos[1], "hp": e.hp, "attack": e.attack}
+                {"row": e.pos[0], "col": e.pos[1], "hp": e.hp, "attack": e.attack, "paralyses": e.paralyses}
                 for e in self.enemies
             ],
             "items": [{"row": i.pos[0], "col": i.pos[1], "kind": i.kind} for i in self.items],
@@ -341,8 +386,8 @@ class Game:
 
         Older saves are upgraded step by step: version 1 (round 1, no items) to
         version 2, version 2 (round 2, one map) to version 3, version 3
-        (round 3, no poison) to version 4, then version 4 (round 4, no enemy
-        attack) to version 5.
+        (round 3, no poison) to version 4, version 4 (round 4, no enemy
+        attack) to version 5, then version 5 (round 5, no paralysis) to version 6.
         """
         if isinstance(data, dict) and data.get("version") == 1:
             data = _upgrade_v1(data)
@@ -352,6 +397,8 @@ class Game:
             data = _upgrade_v3(data)
         if isinstance(data, dict) and data.get("version") == 4:
             data = _upgrade_v4(data)
+        if isinstance(data, dict) and data.get("version") == 5:
+            data = _upgrade_v5(data)
         try:
             if not isinstance(data, dict) or data.get("version") != SAVE_VERSION:
                 raise SaveError("unsupported or missing save version")
@@ -371,7 +418,12 @@ class Game:
                 player=(_int(p["row"]), _int(p["col"])),
                 player_hp=_int(p["hp"]),
                 enemies=[
-                    Enemy((_int(e["row"]), _int(e["col"])), _int(e["hp"]), _int(e["attack"]))
+                    Enemy(
+                        (_int(e["row"]), _int(e["col"])),
+                        _int(e["hp"]),
+                        _int(e["attack"]),
+                        _bool(e["paralyses"]),
+                    )
                     for e in data["enemies"]
                 ],
                 status=data["status"],
@@ -381,6 +433,7 @@ class Game:
                 level=_int(data["level"]),
                 next_levels=_map_list(data["next_levels"]),
                 poison=_int(p["poison"]),
+                paralysis=_int(p["paralysis"]),
             )
             for lines in game.next_levels:
                 cls.from_map(lines)
@@ -398,6 +451,8 @@ class Game:
             raise SaveError("potion count is invalid")
         if not 0 <= game.poison <= POISON_TURNS:
             raise SaveError("poison turns are invalid")
+        if not 0 <= game.paralysis <= PARALYSIS_TURNS:
+            raise SaveError("paralysis turns are invalid")
         if any(w not in WEAPONS for w in game.weapons):
             raise SaveError("unknown weapon in save")
         for enemy in game.enemies:
@@ -455,6 +510,22 @@ def _upgrade_v4(data: dict) -> dict:
     return data
 
 
+def _upgrade_v5(data: dict) -> dict:
+    """Turn a round 5 save into a version 6 save: the player is not paralysed, and each enemy
+    paralyses if the saved level is one whose enemies paralyse (R12.1).
+
+    A bad level number or enemy list is left alone for from_dict to reject.
+    """
+    data = dict(data, version=6)
+    if isinstance(data.get("player"), dict):
+        data["player"] = dict(data["player"], paralysis=0)
+    level, enemies = data.get("level"), data.get("enemies")
+    if isinstance(level, int) and not isinstance(level, bool) and level >= 1 and isinstance(enemies, list):
+        paralyses = enemy_paralyses(level)
+        data["enemies"] = [dict(e, paralyses=paralyses) if isinstance(e, dict) else e for e in enemies]
+    return data
+
+
 def _map_list(value: object) -> list[list[str]]:
     if not isinstance(value, list):
         raise TypeError(f"expected a list of maps, got {value!r}")
@@ -471,6 +542,12 @@ def _str_list(value: object) -> list[str]:
     if not isinstance(value, list):
         raise TypeError(f"expected a list of strings, got {value!r}")
     return [_str(v) for v in value]
+
+
+def _bool(value: object) -> bool:
+    if not isinstance(value, bool):
+        raise TypeError(f"expected true or false, got {value!r}")
+    return value
 
 
 def _int(value: object) -> int:
