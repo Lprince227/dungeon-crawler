@@ -22,14 +22,16 @@ PLAYER_START_HP = 20
 PLAYER_MAX_HP = PLAYER_START_HP
 POTION_HEAL = 10
 PLAYER_ATTACK = 5
-ENEMY_START_HP = 12  # 8 before round 4 (R9)
-ENEMY_ATTACK = 3
+# Enemy (HP, attack) by level number; levels past the end use the last entry (R11).
+# Before round 5 every level had (12, 3); before round 4, 8 HP (R9).
+ENEMY_LEVEL_STATS = [(12, 3), (16, 3), (20, 4)]
+ENEMY_START_HP, ENEMY_ATTACK = ENEMY_LEVEL_STATS[0]  # level 1
 # Every enemy hit-back poisons the player: POISON_DAMAGE at the start of each of the
 # next POISON_TURNS turns. A new hit resets the count; it does not stack (R10).
 POISON_TURNS = 3
 POISON_DAMAGE = 1
 
-SAVE_VERSION = 4
+SAVE_VERSION = 5
 GAME_OVER = "Game over. Start a new game or load a save."
 STATUSES = ("playing", "won", "lost")
 
@@ -90,10 +92,16 @@ class SaveError(Exception):
     """A save file could not be read or does not hold a valid game."""
 
 
+def enemy_stats(level: int) -> tuple[int, int]:
+    """(HP, attack) of a new enemy on the given level number (R11)."""
+    return ENEMY_LEVEL_STATS[min(level, len(ENEMY_LEVEL_STATS)) - 1]
+
+
 @dataclass
 class Enemy:
     pos: tuple[int, int]
     hp: int = ENEMY_START_HP
+    attack: int = ENEMY_ATTACK
 
 
 @dataclass
@@ -134,11 +142,15 @@ class Game:
         return game
 
     @classmethod
-    def from_map(cls, lines: list[str]) -> Game:
-        """Build a new one-level game from a text map (see spec.md for the legend)."""
+    def from_map(cls, lines: list[str], level: int = 1) -> Game:
+        """Build a new one-level game from a text map (see spec.md for the legend).
+
+        Enemies get the stats for `level` (R11); the game itself always starts as level 1.
+        """
         if not lines or len({len(row) for row in lines}) != 1:
             raise ValueError("map must be non-empty and rectangular")
         players, exits, enemies, items, tiles = [], [], [], [], []
+        enemy_hp, enemy_attack = enemy_stats(level)
         for r, row in enumerate(lines):
             clean = []
             for c, ch in enumerate(row):
@@ -146,7 +158,7 @@ class Game:
                     players.append((r, c))
                     ch = FLOOR
                 elif ch == ENEMY:
-                    enemies.append(Enemy((r, c)))
+                    enemies.append(Enemy((r, c), enemy_hp, enemy_attack))
                     ch = FLOOR
                 elif ch in ITEM_CHARS:
                     items.append(Item((r, c), ITEM_CHARS[ch]))
@@ -243,11 +255,15 @@ class Game:
 
     def _next_level(self) -> str:
         """Replace the map, enemies and items with the next level's. Stats carry over (R7.3)."""
-        nxt = Game.from_map(self.next_levels.pop(0))
+        self.level += 1
+        nxt = Game.from_map(self.next_levels.pop(0), level=self.level)
         self.tiles, self.player = nxt.tiles, nxt.player
         self.enemies, self.items = nxt.enemies, nxt.items
-        self.level += 1
-        return f"You reach the exit and go down to level {self.level} of {self.total_levels}."
+        hp, attack = enemy_stats(self.level)
+        return (
+            f"You reach the exit and go down to level {self.level} of {self.total_levels}. "
+            f"Enemies here have {hp} HP and hit for {attack}."
+        )
 
     def _pick_up(self, item: Item) -> str:
         """Collect the item the player is standing on."""
@@ -286,11 +302,11 @@ class Game:
         if enemy.hp <= 0:
             self.enemies.remove(enemy)
             return f"You hit the enemy for {damage} and defeat it!"
-        self.player_hp = max(0, self.player_hp - ENEMY_ATTACK)
+        self.player_hp = max(0, self.player_hp - enemy.attack)
         self.poison = POISON_TURNS  # reset, not stacked (R10.3)
         message = (
             f"You hit the enemy for {damage} (enemy HP {enemy.hp}). "
-            f"It hits back for {ENEMY_ATTACK} and poisons you ({POISON_TURNS} turns)."
+            f"It hits back for {enemy.attack} and poisons you ({POISON_TURNS} turns)."
         )
         if self.player_hp == 0:
             self.status = "lost"
@@ -311,7 +327,10 @@ class Game:
                 "weapons": list(self.weapons),
                 "poison": self.poison,
             },
-            "enemies": [{"row": e.pos[0], "col": e.pos[1], "hp": e.hp} for e in self.enemies],
+            "enemies": [
+                {"row": e.pos[0], "col": e.pos[1], "hp": e.hp, "attack": e.attack}
+                for e in self.enemies
+            ],
             "items": [{"row": i.pos[0], "col": i.pos[1], "kind": i.kind} for i in self.items],
             "status": self.status,
         }
@@ -321,8 +340,9 @@ class Game:
         """Rebuild a game from to_dict() output. Raises SaveError if invalid.
 
         Older saves are upgraded step by step: version 1 (round 1, no items) to
-        version 2, version 2 (round 2, one map) to version 3, then version 3
-        (round 3, no poison) to version 4.
+        version 2, version 2 (round 2, one map) to version 3, version 3
+        (round 3, no poison) to version 4, then version 4 (round 4, no enemy
+        attack) to version 5.
         """
         if isinstance(data, dict) and data.get("version") == 1:
             data = _upgrade_v1(data)
@@ -330,6 +350,8 @@ class Game:
             data = _upgrade_v2(data)
         if isinstance(data, dict) and data.get("version") == 3:
             data = _upgrade_v3(data)
+        if isinstance(data, dict) and data.get("version") == 4:
+            data = _upgrade_v4(data)
         try:
             if not isinstance(data, dict) or data.get("version") != SAVE_VERSION:
                 raise SaveError("unsupported or missing save version")
@@ -349,7 +371,7 @@ class Game:
                 player=(_int(p["row"]), _int(p["col"])),
                 player_hp=_int(p["hp"]),
                 enemies=[
-                    Enemy((_int(e["row"]), _int(e["col"])), _int(e["hp"]))
+                    Enemy((_int(e["row"]), _int(e["col"])), _int(e["hp"]), _int(e["attack"]))
                     for e in data["enemies"]
                 ],
                 status=data["status"],
@@ -381,6 +403,8 @@ class Game:
         for enemy in game.enemies:
             if game.tile_at(enemy.pos) != FLOOR or enemy.hp <= 0 or enemy.pos == game.player:
                 raise SaveError("enemy position or HP is invalid")
+            if enemy.attack < 1:
+                raise SaveError("enemy attack is invalid")
         taken = {game.player} | {e.pos for e in game.enemies}
         for item in game.items:
             if item.kind not in ITEM_KINDS or game.tile_at(item.pos) != FLOOR or item.pos in taken:
@@ -414,6 +438,20 @@ def _upgrade_v3(data: dict) -> dict:
     data = dict(data, version=4)
     if isinstance(data.get("player"), dict):
         data["player"] = dict(data["player"], poison=0)
+    return data
+
+
+def _upgrade_v4(data: dict) -> dict:
+    """Turn a round 4 save into a version 5 save: each enemy gets the attack for the saved level.
+
+    Enemy HP is kept as saved (ADR 0009); levels still to come get their stats from their maps.
+    A bad level number or enemy list is left alone for from_dict to reject.
+    """
+    data = dict(data, version=5)
+    level, enemies = data.get("level"), data.get("enemies")
+    if isinstance(level, int) and not isinstance(level, bool) and level >= 1 and isinstance(enemies, list):
+        attack = enemy_stats(level)[1]
+        data["enemies"] = [dict(e, attack=attack) if isinstance(e, dict) else e for e in enemies]
     return data
 
 
