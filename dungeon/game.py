@@ -25,7 +25,7 @@ PLAYER_ATTACK = 5
 ENEMY_START_HP = 8
 ENEMY_ATTACK = 3
 
-SAVE_VERSION = 2
+SAVE_VERSION = 3
 GAME_OVER = "Game over. Start a new game or load a save."
 STATUSES = ("playing", "won", "lost")
 
@@ -258,7 +258,9 @@ class Game:
     def to_dict(self) -> dict:
         return {
             "version": SAVE_VERSION,
+            "level": self.level,
             "map": list(self.tiles),
+            "next_levels": [list(lines) for lines in self.next_levels],
             "player": {
                 "row": self.player[0],
                 "col": self.player[1],
@@ -275,10 +277,13 @@ class Game:
     def from_dict(cls, data: object) -> Game:
         """Rebuild a game from to_dict() output. Raises SaveError if invalid.
 
-        Version 1 saves (round 1, no items) are upgraded to the current version.
+        Older saves are upgraded step by step: version 1 (round 1, no items) to
+        version 2, then version 2 (round 2, one map) to version 3.
         """
         if isinstance(data, dict) and data.get("version") == 1:
             data = _upgrade_v1(data)
+        if isinstance(data, dict) and data.get("version") == 2:
+            data = _upgrade_v2(data)
         try:
             if not isinstance(data, dict) or data.get("version") != SAVE_VERSION:
                 raise SaveError("unsupported or missing save version")
@@ -305,9 +310,17 @@ class Game:
                 potions=_int(p["potions"]),
                 weapons=_str_list(p["weapons"]),
                 items=[Item((_int(i["row"]), _int(i["col"])), _str(i["kind"])) for i in data["items"]],
+                level=_int(data["level"]),
+                next_levels=_map_list(data["next_levels"]),
             )
+            for lines in game.next_levels:
+                cls.from_map(lines)
         except (KeyError, TypeError) as exc:
             raise SaveError(f"save data is incomplete: {exc!r}") from exc
+        except ValueError as exc:
+            raise SaveError(f"a later level's map is invalid: {exc}") from exc
+        if game.level < 1:
+            raise SaveError("level number is invalid")
         if game.status not in STATUSES:
             raise SaveError(f"unknown status {game.status!r}")
         if game.tile_at(game.player) == WALL or not 0 <= game.player_hp <= PLAYER_MAX_HP:
@@ -329,10 +342,25 @@ class Game:
 
 def _upgrade_v1(data: dict) -> dict:
     """Turn a round 1 save into a version 2 save: no potions, weapons or items."""
-    data = dict(data, version=SAVE_VERSION, items=[])
+    data = dict(data, version=2, items=[])
     if isinstance(data.get("player"), dict):
         data["player"] = dict(data["player"], potions=0, weapons=[])
     return data
+
+
+def _upgrade_v2(data: dict) -> dict:
+    """Turn a round 2 save into a version 3 save: its map becomes level 1 of the built-in levels.
+
+    A game that was already won stays won, with no further levels.
+    """
+    upcoming = [] if data.get("status") == "won" else [list(m) for m in LEVELS[1:]]
+    return dict(data, version=3, level=1, next_levels=upcoming)
+
+
+def _map_list(value: object) -> list[list[str]]:
+    if not isinstance(value, list):
+        raise TypeError(f"expected a list of maps, got {value!r}")
+    return [_str_list(lines) for lines in value]
 
 
 def _str(value: object) -> str:
