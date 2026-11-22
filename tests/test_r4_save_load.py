@@ -7,8 +7,9 @@ from dungeon.game import DEFAULT_MAP, LEVELS, Game, SaveError, load_game, save_g
 
 
 def test_r4_save_writes_json_with_full_state(tmp_path):
-    """R4.1/R4.5/R10.8: the version 4 save holds level, map, next levels, player (with poison),
-    enemies, items and status. The 12 HP enemy (R9) survives the sword and poisons the player."""
+    """R4.1/R4.5/R10.8/R11.3: the version 5 save holds level, map, next levels, player (with
+    poison), enemies (with attack), items and status. The 12 HP level 1 enemy (R9) survives
+    the sword and poisons the player. Changed in round 5: version 5 and enemy attack."""
     game = Game.from_map(["######", "#@E.!#", "#/####", "#!###X"])
     game.move("down")
     game.move("up")
@@ -17,19 +18,19 @@ def test_r4_save_writes_json_with_full_state(tmp_path):
     save_game(game, path)
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data == {
-        "version": 4,
+        "version": 5,
         "level": 1,
         "map": ["######", "#....#", "#.####", "#.###X"],
         "next_levels": [],
         "player": {"row": 1, "col": 1, "hp": 17, "potions": 0, "weapons": ["sword"], "poison": 3},
-        "enemies": [{"row": 1, "col": 2, "hp": 4}],
+        "enemies": [{"row": 1, "col": 2, "hp": 4, "attack": 3}],
         "items": [{"row": 1, "col": 4, "kind": "potion"}, {"row": 3, "col": 1, "kind": "potion"}],
         "status": "playing",
     }
 
 
 def test_r4_save_records_enemy_hp_and_potions(tmp_path):
-    """R4.1: enemy HP, carried potions and poison are saved."""
+    """R4.1/R11.3: enemy HP and attack, carried potions and poison are saved."""
     game = Game.from_map(["#####", "!@E.#", "####X"])
     game.move("left")
     game.move("right")
@@ -38,7 +39,7 @@ def test_r4_save_records_enemy_hp_and_potions(tmp_path):
     save_game(game, path)
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["player"] == {"row": 1, "col": 1, "hp": 17, "potions": 1, "weapons": [], "poison": 3}
-    assert data["enemies"] == [{"row": 1, "col": 2, "hp": 7}]
+    assert data["enemies"] == [{"row": 1, "col": 2, "hp": 7, "attack": 3}]
     assert data["items"] == []
 
 
@@ -75,7 +76,7 @@ def test_r4_version_1_save_is_upgraded(tmp_path):
     assert (game.level, game.total_levels) == (1, 3)
     assert game.next_levels == [list(m) for m in LEVELS[1:]]
     save_game(game, path)
-    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 4
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 5
 
 
 V2_SAVE = {
@@ -100,7 +101,7 @@ def test_r4_version_2_save_becomes_level_1(tmp_path):
     assert (game.level, game.total_levels, game.status, game.poison) == (1, 3, "playing", 0)
     assert game.next_levels == [list(m) for m in LEVELS[1:]]
     save_game(game, path)
-    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 4
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 5
 
 
 def test_r4_upgraded_version_2_save_continues_to_level_2(tmp_path):
@@ -230,6 +231,14 @@ def test_r4_missing_file_raises_save_error(tmp_path):
         '{"version": 4, "level": 1, "map": ["...X"], "next_levels": [], "player": {"row": 0, "col": 0, "hp": 5, "potions": 0, "weapons": [], "poison": 1.5}, "enemies": [], "items": [], "status": "playing"}',
         '{"version": 4, "level": 1, "map": ["...X"], "next_levels": [], "player": {"row": 0, "col": 0, "hp": 5, "potions": 0, "weapons": [], "poison": null}, "enemies": [], "items": [], "status": "playing"}',
         '{"version": 4, "level": 1, "map": ["...X"], "next_levels": [], "player": {"row": 0, "col": 0, "hp": 5, "potions": 0, "weapons": []}, "enemies": [], "items": [], "status": "playing"}',
+        # R4.3 round 5 checks on version 5 saves (enemy attack)
+        '{"version": 5, "level": 1, "map": ["...X"], "next_levels": [], "player": {"row": 0, "col": 0, "hp": 5, "potions": 0, "weapons": [], "poison": 0}, "enemies": [{"row": 0, "col": 2, "hp": 3}], "items": [], "status": "playing"}',
+        '{"version": 5, "level": 1, "map": ["...X"], "next_levels": [], "player": {"row": 0, "col": 0, "hp": 5, "potions": 0, "weapons": [], "poison": 0}, "enemies": [{"row": 0, "col": 2, "hp": 3, "attack": 0}], "items": [], "status": "playing"}',
+        '{"version": 5, "level": 1, "map": ["...X"], "next_levels": [], "player": {"row": 0, "col": 0, "hp": 5, "potions": 0, "weapons": [], "poison": 0}, "enemies": [{"row": 0, "col": 2, "hp": 3, "attack": -2}], "items": [], "status": "playing"}',
+        '{"version": 5, "level": 1, "map": ["...X"], "next_levels": [], "player": {"row": 0, "col": 0, "hp": 5, "potions": 0, "weapons": [], "poison": 0}, "enemies": [{"row": 0, "col": 2, "hp": 3, "attack": "3"}], "items": [], "status": "playing"}',
+        '{"version": 5, "level": 1, "map": ["...X"], "next_levels": [], "player": {"row": 0, "col": 0, "hp": 5, "potions": 0, "weapons": [], "poison": 0}, "enemies": [{"row": 0, "col": 2, "hp": 3, "attack": true}], "items": [], "status": "playing"}',
+        '{"version": 5, "level": 1, "map": ["...X"], "next_levels": [], "player": {"row": 0, "col": 0, "hp": 5, "potions": 0, "weapons": [], "poison": 0}, "enemies": [{"row": 0, "col": 2, "hp": 3, "attack": 2.5}], "items": [], "status": "playing"}',
+        '{"version": 5, "level": 1, "map": ["...X"], "next_levels": [], "player": {"row": 0, "col": 0, "hp": 5, "potions": 0, "weapons": [], "poison": 0}, "enemies": [{"row": 0, "col": 2, "hp": 3, "attack": null}], "items": [], "status": "playing"}',
     ],
 )
 def test_r4_malformed_file_raises_save_error(tmp_path, content):
@@ -281,6 +290,90 @@ def test_r4_valid_version_4_save_loads(tmp_path):
     assert load_game(path).poison == 3
 
 
+def test_r4_valid_version_5_save_loads(tmp_path):
+    """R4.2/R4.5/R11.3: the base version 5 save used by the malformed cases above is itself valid."""
+    content = (
+        '{"version": 5, "level": 1, "map": ["...X"], "next_levels": [], '
+        '"player": {"row": 0, "col": 0, "hp": 5, "potions": 0, "weapons": [], "poison": 0}, '
+        '"enemies": [{"row": 0, "col": 2, "hp": 3, "attack": 3}], "items": [], "status": "playing"}'
+    )
+    path = tmp_path / "good.json"
+    path.write_text(content, encoding="utf-8")
+    assert [(e.pos, e.hp, e.attack) for e in load_game(path).enemies] == [((0, 2), 3, 3)]
+
+
+def test_r4_roundtrip_keeps_level_3_enemy_stats(tmp_path):
+    """R4.2/R11.3: level 3 enemies' HP and attack survive a round trip of the default game."""
+    game = Game.from_levels(LEVELS)
+    for _ in range(2):
+        game.enemies = []
+        game.player = (9, 8)  # next to the exit at (9, 9) on levels 1 and 2
+        game.tiles[9] = game.tiles[9][:8] + ".X" + game.tiles[9][10:]
+        game.move("right")
+    assert game.level == 3
+    game.enemies[0].hp = 9
+    path = tmp_path / "save.json"
+    save_game(game, path)
+    loaded = load_game(path)
+    assert loaded == game
+    assert {(e.hp, e.attack) for e in loaded.enemies[1:]} == {(20, 4)}
+    assert (loaded.enemies[0].hp, loaded.enemies[0].attack) == (9, 4)
+
+
+def _v4_save(level, poison=2):
+    return {
+        "version": 4,
+        "level": level,
+        "map": ["#####", "#...#", "####X"],
+        "next_levels": [["@E.X"]] if level < 3 else [],
+        "player": {"row": 1, "col": 1, "hp": 15, "potions": 1, "weapons": ["sword"], "poison": poison},
+        "enemies": [{"row": 1, "col": 2, "hp": 12}],
+        "items": [{"row": 1, "col": 3, "kind": "potion"}],
+        "status": "playing",
+    }
+
+
+@pytest.mark.parametrize(("level", "attack"), [(1, 3), (2, 3), (3, 4), (4, 4)])
+def test_r4_version_4_save_is_upgraded(tmp_path, level, attack):
+    """R4.5/R11.1: a round 4 save loads with each enemy given the attack for the saved level.
+    Everything else is kept, including the saved 12 HP (not the new level HP), and it is
+    written back as version 5."""
+    path = tmp_path / "old.json"
+    path.write_text(json.dumps(_v4_save(level)), encoding="utf-8")
+    game = load_game(path)
+    assert [(e.pos, e.hp, e.attack) for e in game.enemies] == [((1, 2), 12, attack)]
+    assert (game.level, game.player, game.player_hp, game.poison) == (level, (1, 1), 15, 2)
+    assert (game.potions, game.weapons) == (1, ["sword"])
+    assert [(i.pos, i.kind) for i in game.items] == [((1, 3), "potion")]
+    save_game(game, path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["version"] == 5
+    assert data["enemies"] == [{"row": 1, "col": 2, "hp": 12, "attack": attack}]
+
+
+def test_r4_upgraded_version_4_save_gets_round_5_stats_on_the_next_level(tmp_path):
+    """R4.5/R11.1: a round 4 save on level 2 leads to a level 3 with 20 HP, 4 attack enemies."""
+    path = tmp_path / "old.json"
+    open_exit = dict(_v4_save(2, poison=0), map=["#####", "#...X", "#####"], enemies=[], items=[])
+    path.write_text(json.dumps(open_exit), encoding="utf-8")
+    game = load_game(path)
+    for _ in range(3):
+        game.move("right")
+    assert game.level == 3
+    assert [(e.hp, e.attack) for e in game.enemies] == [(20, 4)]
+
+
+def test_r4_version_3_save_goes_through_version_4_to_5(tmp_path):
+    """R4.5: a round 3 save on level 2 is upgraded 3 -> 4 -> 5. It is not poisoned, and its
+    8 HP enemy keeps its HP and gets level 2's attack of 3."""
+    path = tmp_path / "old.json"
+    path.write_text(json.dumps(V3_SAVE), encoding="utf-8")
+    game = load_game(path)
+    assert game.poison == 0
+    assert [(e.hp, e.attack) for e in game.enemies] == [(8, 3)]
+    assert game.to_dict()["version"] == 5
+
+
 V3_SAVE = {
     "version": 3,
     "level": 2,
@@ -295,7 +388,7 @@ V3_SAVE = {
 
 def test_r4_version_3_save_is_upgraded(tmp_path):
     """R4.5/R9.3/R10.8: a round 3 save loads unpoisoned, its enemies keep their saved HP,
-    and it is written back as version 4."""
+    and it is written back as version 5 (changed in round 5: was version 4)."""
     path = tmp_path / "old.json"
     path.write_text(json.dumps(V3_SAVE), encoding="utf-8")
     game = load_game(path)
@@ -307,12 +400,14 @@ def test_r4_version_3_save_is_upgraded(tmp_path):
     assert game.next_levels == [["@E.X"]]
     save_game(game, path)
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert data["version"] == 4
+    assert data["version"] == 5
     assert data["player"]["poison"] == 0
 
 
-def test_r4_upgraded_version_3_save_gets_12_hp_enemies_on_the_next_level(tmp_path):
-    """R4.5/R9.1: enemies on the levels still to come in a round 3 save have the new 12 HP."""
+def test_r4_upgraded_version_3_save_gets_round_5_stats_on_the_next_level(tmp_path):
+    """R4.5/R11.1: enemies on the levels still to come in a round 3 save get the stats for
+    their level. Changed in round 5: the saved level 2 leads to level 3, so 20 HP and 4 attack
+    (was 12 HP on every level)."""
     path = tmp_path / "old.json"
     open_exit = dict(V3_SAVE, map=["#####", "#...X", "#####"], enemies=[], items=[])
     path.write_text(json.dumps(open_exit), encoding="utf-8")
@@ -320,13 +415,15 @@ def test_r4_upgraded_version_3_save_gets_12_hp_enemies_on_the_next_level(tmp_pat
     for _ in range(3):
         game.move("right")
     assert game.level == 3
-    assert [e.hp for e in game.enemies] == [12]
+    assert [(e.hp, e.attack) for e in game.enemies] == [(20, 4)]
 
 
 def test_r4_version_2_save_goes_through_version_3_to_4(tmp_path):
-    """R4.5: a round 2 save is upgraded step by step (2 -> 3 -> 4) and is not poisoned."""
+    """R4.5: a round 2 save is upgraded step by step (2 -> 3 -> 4 -> 5), is not poisoned and
+    its level 1 enemy gets attack 3. Changed in round 5: ends at version 5."""
     path = tmp_path / "old.json"
     path.write_text(json.dumps(V2_SAVE), encoding="utf-8")
     game = load_game(path)
     assert game.poison == 0
-    assert game.to_dict()["version"] == 4
+    assert [e.attack for e in game.enemies] == [3]
+    assert game.to_dict()["version"] == 5

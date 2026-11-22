@@ -108,12 +108,24 @@ def test_r7_things_left_behind_do_not_carry_over():
     assert game.potions == 0
 
 
-def test_r7_enemies_on_later_levels_have_the_same_stats():
-    """R7.5 (changed in round 4 by R9 and R10): on every level of the default game, enemies
-    have 12 HP, hit back for 3 and poison for 3 turns. Before round 4 they had 8 HP and no poison."""
-    for lines in LEVELS:
-        game = Game.from_map(lines)
-        assert {e.hp for e in game.enemies} == {ENEMY_START_HP} == {12}
+def test_r7_enemies_get_stronger_on_later_levels():
+    """R7.5 (changed in round 5 by R11): on the default game, all enemies on one level share
+    their stats, which rise by level: 12 HP / hit back 3 on level 1, 16 / 3 on level 2 and
+    20 / 4 on level 3, and they poison for 3 turns everywhere. In round 4 every level had
+    12 / 3; before round 4, 8 HP and no poison."""
+    game = Game.from_levels(LEVELS)
+    for level, (hp, damage) in enumerate([(ENEMY_START_HP, ENEMY_ATTACK), (16, 3), (20, 4)], start=1):
+        if level > 1:  # clear the level and step onto its exit
+            r, c = next((r, c) for r, row in enumerate(game.tiles) for c, ch in enumerate(row) if ch == "X")
+            game.enemies, game.items, game.poison = [], [], 0
+            direction, (dr, dc) = next(
+                (d, v) for d, v in DIRECTIONS.items() if game.tile_at((r - v[0], c - v[1])) == FLOOR
+            )
+            game.player = (r - dr, c - dc)
+            game.move(direction)
+        assert game.level == level
+        assert {(e.hp, e.attack) for e in game.enemies} == {(hp, damage)}
+        game.player_hp = 20
         enemy = game.enemies[0]
         game.enemies = [enemy]
         r, c = enemy.pos
@@ -124,8 +136,8 @@ def test_r7_enemies_on_later_levels_have_the_same_stats():
         game.items = []
         game.player = (r - dr, c - dc)
         game.move(direction)
-        assert enemy.hp == ENEMY_START_HP - 5
-        assert game.player_hp == 20 - ENEMY_ATTACK
+        assert enemy.hp == hp - 5
+        assert game.player_hp == 20 - damage
         assert game.poison == 3
 
 

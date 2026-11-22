@@ -1,31 +1,32 @@
-"""Tests for R9: enemies are harder because they have more HP (12 instead of 8)."""
+"""Tests for R9: enemies are harder because they have more HP (12 instead of 8 on level 1)."""
 import pytest
 
 from dungeon.game import ENEMY_ATTACK, ENEMY_START_HP, LEVELS, PLAYER_ATTACK, Game
 
 
 def test_r9_enemy_start_hp_is_12():
-    """R9.1: an enemy starts with 12 HP; its damage stays 3."""
+    """R9.1: a level 1 enemy starts with 12 HP; its damage stays 3."""
     assert ENEMY_START_HP == 12
     assert ENEMY_ATTACK == 3
 
 
-@pytest.mark.parametrize("index", range(3))
-def test_r9_every_enemy_on_every_built_in_level_has_12_hp(index):
-    """R9.1: all enemies on each built-in level start with 12 HP."""
-    game = Game.from_map(LEVELS[index])
-    assert game.enemies
-    assert {e.hp for e in game.enemies} == {12}
+def test_r9_level_1_enemies_of_the_default_game_have_12_hp():
+    """R9.1 (changed in round 5 by R11): all level 1 enemies of the default game start with
+    12 HP and 3 attack. In round 4 this held on every built-in level."""
+    game = Game.from_levels(LEVELS)
+    assert len(game.enemies) == 6
+    assert {(e.hp, e.attack) for e in game.enemies} == {(12, 3)}
 
 
-def test_r9_enemies_on_later_levels_of_the_default_game_have_12_hp():
-    """R9.1: after reaching level 1's exit in the default game, level 2's enemies have 12 HP."""
+def test_r9_enemies_on_level_2_of_the_default_game_have_more_than_12_hp():
+    """R9.1 (changed in round 5 by R11): after reaching level 1's exit in the default game,
+    level 2's enemies have 16 HP, not 12 as in round 4."""
     game = Game.from_levels(LEVELS)
     game.enemies = [e for e in game.enemies if e.pos != (9, 8)]
     game.player = (9, 8)  # next to level 1's exit at (9, 9)
     game.move("right")
     assert game.level == 2
-    assert {e.hp for e in game.enemies} == {12}
+    assert {e.hp for e in game.enemies} == {16}
 
 
 def test_r9_base_attack_needs_three_hits():
@@ -54,7 +55,7 @@ def test_r9_base_attack_needs_three_hits():
     ],
 )
 def test_r9_hits_needed_by_attack(weapons, hits):
-    """R9.2: hits needed to kill an unhurt enemy, for each weapon mix."""
+    """R9.2: hits needed to kill an unhurt level 1 enemy, for each weapon mix."""
     game = Game.from_map(["@E.X"])
     game.weapons = list(weapons)
     count = 0
